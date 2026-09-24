@@ -1,1 +1,2 @@
-
+-- Sample seed data for testing
+-- (To be updated by Person A)
