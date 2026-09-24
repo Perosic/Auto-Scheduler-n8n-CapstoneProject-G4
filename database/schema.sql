@@ -1,1 +1,2 @@
-
+-- Schema definitions for Rooms, Professors, Courses, Sections, and Overlaps
+-- (To be updated by Person A)
