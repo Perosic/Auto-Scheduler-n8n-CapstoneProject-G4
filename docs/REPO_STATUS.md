@@ -1,57 +1,58 @@
 # Repository Sync & Integration Status
 
-_Last checked: 2026-09-25_
+_Last updated: 2026-09-25_
 
 ## Current state
 
-The repository is a **Day-1 scaffold**, not yet a complete implementation of the P0 scheduler.
+The repository is a **Day-1 scaffold** with validated deliberate-failure fixtures. P0 implementation is still in progress.
 
-### Present
+### Present and validated
 
-- PostgreSQL schema and seed data.
-- Docker Compose for PostgreSQL, pgAdmin, n8n and Gotenberg.
-- Locked algorithm → n8n output contract.
-- Streamlit P1 placeholder.
-- n8n workflow file placeholder.
-- Environment example and secret-oriented .gitignore.
+- PostgreSQL schema with hard-constraint flags
+- Seed data containing **structurally unplaceable** conflict fixtures
+- Docker Compose (Postgres, pgAdmin, n8n, Gotenberg)
+- Locked algorithm → n8n JSON contract (`contracts/`)
+- Streamlit P1 placeholder
+- n8n workflow placeholder
+- Collaboration rules (`CONTRIBUTING.md`)
 
 ### Not yet implemented
 
-- Scheduling algorithm / DSATUR implementation.
-- Standalone verifier.
-- Real n8n nodes and orchestration.
-- P0 timetable generation.
-- Streamlit CSV processing/calendar.
-- AI conflict workflow.
-- Slack integration.
-- PDF/email integration.
+- Scheduling algorithm / DSATUR
+- Standalone verifier
+- Real n8n nodes and orchestration
+- P0 HTML timetable generation
+- Streamlit CSV / calendar
+- AI conflict explanation
+- Slack integration
+- PDF / email integration
 
-## Important validation findings
+## Deliberate failure fixtures (now validated)
 
-The current seed-data comments and README claim **25 courses**, but the SQL currently creates **28 courses**: 22 normal courses plus 6 courses used for the described failure scenarios.
+| Scenario | Courses | Why it is unplaceable | Expected reason_code |
+|----------|---------|-----------------------|----------------------|
+| 1. Capacity | CSC999 | enrolment 150 > largest room 80 | `ROOM_CAPACITY` |
+| 2. Lab + hours | CSC351, CSC352 | same instructor limited to 1 h/week + only one computer lab | `INSTRUCTOR_CLASH` (or `ROOM_EQUIPMENT`) |
+| 3. Clique + hours | MTH401, MTH402, MTH403 | full co-enrolment clique + same instructor limited to 2 h/week | `CO_ENROLMENT` / `INSTRUCTOR_CLASH` |
 
-The current data also does not, by itself, guarantee that all described failure scenarios are unplaceable:
-
-- CSC999 is genuinely impossible because its required capacity is 150 while the largest room is 80.
-- CSC351 and CSC352 share an instructor and compete for LAB1, but they can still be placed in different timeslots unless another constraint makes them simultaneous.
-- MTH401/MTH402/MTH403 are a co-enrolment clique, but the current schema provides 25 timeslots and no per-course allowed-timeslot restriction, so the clique can be assigned to three different timeslots.
-
-Therefore the failure fixtures must be corrected or the constraint model must explicitly represent the intended restrictions before the project can claim that the three conflict paths are proven.
+A correct scheduler **must** leave CSC999 and at least one course from each of scenarios 2 and 3 unplaced. These fixtures exist so the conflict / AI / Slack path is exercised in the demo.
 
 ## Integration contract
 
-The P0 pipeline remains:
+P0 pipeline remains:
 
-PostgreSQL → scheduling algorithm → locked JSON contract → n8n → HTML timetable.
+```
+PostgreSQL → scheduling algorithm → locked JSON contract → n8n → HTML timetable
+```
 
 Downstream contributors should use `contracts/algo_output.example.json` as the temporary upstream fixture until the real algorithm exists.
 
-## Recommended next implementation order
+## Recommended implementation order
 
-1. Validate/finalize the database fixtures and constraint model.
-2. Build the algorithm input adapter.
-3. Implement DSATUR/greedy scheduling.
-4. Implement the independent verifier.
-5. Validate algorithm output against the contract.
-6. Build the n8n DB → algorithm → validation → HTML path.
-7. Add P1 features only after P0 works end-to-end.
+1. ~~Validate/finalize the database fixtures~~ **DONE**
+2. Build the algorithm input adapter (Person B)
+3. Implement DSATUR / greedy scheduling (Person B)
+4. Implement the independent verifier (Person B)
+5. Validate algorithm output against the locked contract (B + C)
+6. Build n8n DB → algorithm → validation → HTML path (Person C)
+7. Add P1 features only after P0 works end-to-end

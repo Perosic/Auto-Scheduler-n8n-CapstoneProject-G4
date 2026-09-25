@@ -1,7 +1,10 @@
 -- ============================================================
 -- seed_data.sql  (Person A / Day 1)
--- 25 courses + 3 deliberately unplaceable cases
--- These 3 cases are intentional test fixtures – do NOT remove.
+-- 22 placeable courses + 3 deliberate conflict scenarios
+-- (6 fixture courses that produce guaranteed unplaced outcomes)
+--
+-- These conflict cases are intentional test fixtures.
+-- Do NOT remove or "fix" them – they prove the conflict path.
 -- ============================================================
 
 -- Departments
@@ -39,14 +42,14 @@ INSERT INTO timeslots (day_of_week, start_time, end_time, label) VALUES
 ('Fri', '13:00', '14:00', 'Fri-13:00'),
 ('Fri', '14:00', '15:00', 'Fri-14:00');
 
--- Rooms (note: largest room capacity is 80)
+-- Rooms (largest capacity = 80)
 INSERT INTO rooms (code, building, capacity, is_lab, notes) VALUES
 ('LT1',  'Main', 80,  FALSE, 'Large lecture theatre'),
 ('LT2',  'Main', 60,  FALSE, NULL),
 ('CR101','Block A', 40, FALSE, NULL),
 ('CR102','Block A', 35, FALSE, NULL),
 ('CR201','Block B', 30, FALSE, NULL),
-('LAB1', 'Science', 25, TRUE,  'Computer lab – only lab room'),
+('LAB1', 'Science', 25, TRUE,  'Computer lab – only computer lab'),
 ('LAB2', 'Science', 20, TRUE,  'Physics lab');
 
 -- Equipment
@@ -65,18 +68,18 @@ WHERE (r.code IN ('LT1','LT2','CR101') AND e.name IN ('projector','whiteboard'))
    OR (r.code = 'LAB2' AND e.name IN ('lab_benches','whiteboard'));
 
 -- Instructors
+-- S002 (Chidi) limited to 1 hour/week → forces lab conflict
+-- S003 (Fatima) limited to 2 hours/week → forces clique conflict
 INSERT INTO instructors (staff_id, full_name, email, department_id, max_hours_week) VALUES
 ('S001', 'Dr. Ada Okonkwo',   'ada.okonkwo@uni.edu', 1, 16),
-('S002', 'Prof. Chidi Eze',   'chidi.eze@uni.edu',   1, 12),
-('S003', 'Dr. Fatima Bello',  'fatima.bello@uni.edu',2, 14),
+('S002', 'Prof. Chidi Eze',   'chidi.eze@uni.edu',   1,  1),  -- deliberately constrained
+('S003', 'Dr. Fatima Bello',  'fatima.bello@uni.edu',2,  2),  -- deliberately constrained
 ('S004', 'Mr. Ibrahim Musa',  'ibrahim.musa@uni.edu',3, 18),
 ('S005', 'Dr. Ngozi Uche',    'ngozi.uche@uni.edu',  4, 15);
 
 -- ============================================================
--- COURSES (22 normal + 3 deliberate unplaceable)
+-- PLACEABLE COURSES (22)
 -- ============================================================
-
--- Normal placeable courses
 INSERT INTO courses (code, title, department_id, credits, is_lab, expected_enrolment, requires_lab, min_capacity, notes) VALUES
 ('CSC101', 'Intro to Programming',          1, 3, FALSE, 55, FALSE, 50, NULL),
 ('CSC201', 'Data Structures',               1, 3, FALSE, 45, FALSE, 40, NULL),
@@ -102,57 +105,60 @@ INSERT INTO courses (code, title, department_id, credits, is_lab, expected_enrol
 ('ENG110', 'Introduction to CAD',           4, 2, FALSE, 25, FALSE, 20, NULL);
 
 -- ============================================================
--- 3 DELIBERATE UNPLACEABLE CASES (required by Masterplan)
--- Do NOT remove or "fix" these – they prove the conflict path.
+-- 3 DELIBERATE CONFLICT SCENARIOS (structurally unplaceable)
 -- ============================================================
 
--- 1. Course too large for ANY available room (max room = 80)
+-- 1. ROOM_CAPACITY – course larger than any room
 INSERT INTO courses (code, title, department_id, credits, is_lab, expected_enrolment, requires_lab, min_capacity, notes) VALUES
 ('CSC999', 'Massive Open Seminar (UNPLACEABLE)', 1, 1, FALSE, 150, FALSE, 150,
- 'DELIBERATE FAILURE: expected_enrolment 150 > largest room capacity 80 → ROOM_CAPACITY');
+ 'DELIBERATE FAILURE #1: expected_enrolment 150 > largest room capacity 80 → ROOM_CAPACITY');
 
--- 2. Two lab courses that both require the single computer lab (LAB1)
---    and share the same instructor → impossible to schedule both
+-- 2. Lab contention + instructor hour limit
+--    Both require the only computer lab AND share an instructor limited to 1 hour/week.
+--    At most one can be placed → second fails with INSTRUCTOR_CLASH / ROOM_EQUIPMENT.
 INSERT INTO courses (code, title, department_id, credits, is_lab, expected_enrolment, requires_lab, min_capacity, notes) VALUES
-('CSC351', 'Advanced Programming Lab A (UNPLACEABLE)', 1, 1, TRUE, 22, TRUE, 20,
- 'DELIBERATE FAILURE: competes with CSC352 for the only computer lab + same instructor'),
-('CSC352', 'Advanced Programming Lab B (UNPLACEABLE)', 1, 1, TRUE, 22, TRUE, 20,
- 'DELIBERATE FAILURE: competes with CSC351 for the only computer lab + same instructor');
+('CSC351', 'Advanced Programming Lab A (UNPLACEABLE)', 1, 1, TRUE, 18, TRUE, 18,
+ 'DELIBERATE FAILURE #2: competes with CSC352 for LAB1 + same instructor (max 1 h/week)'),
+('CSC352', 'Advanced Programming Lab B (UNPLACEABLE)', 1, 1, TRUE, 18, TRUE, 18,
+ 'DELIBERATE FAILURE #2: competes with CSC351 for LAB1 + same instructor (max 1 h/week)');
 
--- 3. Co-enrolled clique with too few available slots
---    Three courses that all pairwise conflict and need distinct slots,
---    but we will force them into a tiny set of possible times via other constraints.
+-- 3. Co-enrolment clique + instructor hour limit
+--    Full pairwise co-enrolment + same instructor limited to 2 hours/week.
+--    At most two can be placed → third fails with CO_ENROLMENT / INSTRUCTOR_CLASH.
 INSERT INTO courses (code, title, department_id, credits, is_lab, expected_enrolment, requires_lab, min_capacity, notes) VALUES
 ('MTH401', 'Graph Theory (UNPLACEABLE clique)',     2, 3, FALSE, 25, FALSE, 20,
- 'DELIBERATE FAILURE: part of co-enrolment clique with too few free slots'),
+ 'DELIBERATE FAILURE #3: co-enrolment clique + instructor max 2 h/week'),
 ('MTH402', 'Combinatorics (UNPLACEABLE clique)',    2, 3, FALSE, 25, FALSE, 20,
- 'DELIBERATE FAILURE: part of co-enrolment clique with too few free slots'),
+ 'DELIBERATE FAILURE #3: co-enrolment clique + instructor max 2 h/week'),
 ('MTH403', 'Number Theory (UNPLACEABLE clique)',    2, 3, FALSE, 25, FALSE, 20,
- 'DELIBERATE FAILURE: part of co-enrolment clique with too few free slots');
+ 'DELIBERATE FAILURE #3: co-enrolment clique + instructor max 2 h/week');
 
--- Sections for normal courses (one section each for simplicity)
+-- ============================================================
+-- SECTIONS
+-- ============================================================
+
+-- Normal placeable courses (one section each)
 INSERT INTO sections (course_id, section_code, instructor_id, duration_slots)
 SELECT c.course_id, 'A',
        CASE
-         WHEN c.department_id = 1 THEN 1
-         WHEN c.department_id = 2 THEN 3
+         WHEN c.department_id = 1 THEN 1   -- Ada
+         WHEN c.department_id = 2 THEN 3   -- Fatima (but only for non-fixture MTH)
          WHEN c.department_id = 3 THEN 4
          ELSE 5
        END,
        1
 FROM courses c
-WHERE c.code NOT LIKE '%UNPLACEABLE%'
-  AND c.code NOT IN ('CSC351','CSC352','MTH401','MTH402','MTH403');
+WHERE c.code NOT IN ('CSC999','CSC351','CSC352','MTH401','MTH402','MTH403');
 
--- Sections for the deliberate failures
+-- Fixture sections
 INSERT INTO sections (course_id, section_code, instructor_id, duration_slots)
-SELECT course_id, 'A', 1, 1 FROM courses WHERE code = 'CSC999';
-
-INSERT INTO sections (course_id, section_code, instructor_id, duration_slots)
-SELECT course_id, 'A', 2, 1 FROM courses WHERE code IN ('CSC351','CSC352');  -- same instructor
+SELECT course_id, 'A', 1, 1 FROM courses WHERE code = 'CSC999';           -- Ada (plenty of hours)
 
 INSERT INTO sections (course_id, section_code, instructor_id, duration_slots)
-SELECT course_id, 'A', 3, 1 FROM courses WHERE code IN ('MTH401','MTH402','MTH403');
+SELECT course_id, 'A', 2, 1 FROM courses WHERE code IN ('CSC351','CSC352'); -- Chidi (max 1 h)
+
+INSERT INTO sections (course_id, section_code, instructor_id, duration_slots)
+SELECT course_id, 'A', 3, 1 FROM courses WHERE code IN ('MTH401','MTH402','MTH403'); -- Fatima (max 2 h)
 
 -- Co-enrolment clique (all three pairwise conflict)
 INSERT INTO course_co_enrolment (course_id_a, course_id_b)
@@ -168,18 +174,24 @@ SELECT a.course_id, b.course_id
 FROM courses a, courses b
 WHERE a.code = 'MTH402' AND b.code = 'MTH403';
 
--- Equipment requirements for lab courses
+-- Equipment requirements for the lab pair
 INSERT INTO course_equipment_req (course_id, equipment_id)
 SELECT c.course_id, e.equipment_id
 FROM courses c, equipment e
 WHERE c.code IN ('CSC351','CSC352') AND e.name = 'computers';
 
 -- ============================================================
--- Summary for verification
+-- VERIFICATION SUMMARY (for humans & LLMs)
 -- ============================================================
--- Normal courses: 22
--- Deliberate failures:
+-- Placeable courses : 22
+-- Fixture courses   : 6 (producing 3 guaranteed unplaced outcomes)
+--
+-- Deliberate failures (must remain unplaceable):
 --   1. CSC999          → ROOM_CAPACITY (150 > 80)
---   2. CSC351 + CSC352 → ROOM_EQUIPMENT / lab contention + same instructor
---   3. MTH401/402/403  → CO_ENROLMENT clique
--- Total courses: 25
+--   2. CSC351 / CSC352 → INSTRUCTOR_CLASH (shared instructor max_hours_week=1)
+--                        + lab contention on LAB1
+--   3. MTH401/402/403  → CO_ENROLMENT clique + INSTRUCTOR_CLASH
+--                        (shared instructor max_hours_week=2)
+--
+-- Any correct scheduler MUST leave at least one course unplaced
+-- from scenario 2 and one from scenario 3, plus CSC999.

@@ -3,7 +3,7 @@
 
 University Course Timetable Conflict-Free Auto-Scheduler built around **n8n** as the orchestration core.
 
-> **Status**: Day-1 scaffold. Collaborators can clone and start immediately; P0 implementation is still in progress.
+> **Status**: Day-1 scaffold with validated deliberate-failure fixtures. P0 implementation is still in progress.
 
 ---
 
@@ -27,6 +27,9 @@ docker compose up -d
 ```
 
 Schema and seed data are automatically applied on first Postgres start.
+
+> **Note**: If you already ran the stack before the fixture fix, recreate the database volume:
+> `docker compose down -v && docker compose up -d`
 
 ---
 
@@ -52,7 +55,7 @@ Database (Postgres)
 
 ## Data Contracts (Shared Interface)
 
-See `/contracts` folder. The exact JSON shape is an **interface contract**.
+See [`/contracts`](contracts/) folder. The exact JSON shape is an **interface contract**.
 
 **Algorithm → n8n**
 ```json
@@ -67,15 +70,17 @@ See `/contracts` folder. The exact JSON shape is an **interface contract**.
 
 ---
 
-## Deliberate Failure Cases (Do Not Remove)
+## Deliberate Failure Cases (Validated – Do Not Remove)
 
-Seed data intentionally contains **three unplaceable courses** so the conflict path is exercised:
+Seed data contains **three structurally unplaceable scenarios** so the conflict path is guaranteed to fire:
 
-1. **CSC999** – enrolment 150 > largest room (80) → `ROOM_CAPACITY`
-2. **CSC351 + CSC352** – two lab courses fighting for the single computer lab + same instructor → `ROOM_EQUIPMENT` / clash
-3. **MTH401/402/403** – co-enrolment clique with insufficient free slots → `CO_ENROLMENT`
+| # | Courses | Constraint that makes them unplaceable | Expected reason_code |
+|---|---------|----------------------------------------|----------------------|
+| 1 | CSC999 | enrolment 150 > largest room (80) | `ROOM_CAPACITY` |
+| 2 | CSC351 + CSC352 | same instructor limited to 1 h/week + only one computer lab | `INSTRUCTOR_CLASH` |
+| 3 | MTH401/402/403 | full co-enrolment clique + same instructor limited to 2 h/week | `CO_ENROLMENT` / `INSTRUCTOR_CLASH` |
 
-These are **test fixtures**, not bugs.
+These are **test fixtures**, not bugs. A correct scheduler must leave at least one course unplaced from scenarios 2 and 3, plus CSC999.
 
 ---
 
@@ -83,18 +88,18 @@ These are **test fixtures**, not bugs.
 
 ```
 ├── database/
-│   ├── schema.sql          # Full normalized schema + hard-constraint flags
-│   └── seed_data.sql       # 25 courses including 3 deliberate failures
+│   ├── schema.sql          # Normalized schema + hard-constraint flags
+│   └── seed_data.sql       # 22 placeable + validated conflict fixtures
 ├── contracts/
 │   ├── algo_output.example.json
-│   ├── CONTRIBUTING.md          # Collaboration + AI/LLM workflow rules
-└── README.md           # Locked interface documentation
+│   └── README.md           # Locked interface documentation
 ├── workflows/
 │   └── course_scheduler_workflow.json  # n8n workflow (to be built)
 ├── docs/
-│   └── REPO_STATUS.md        # Current implementation/validation status
+│   └── REPO_STATUS.md      # Current implementation & validation status
 ├── frontend/
 │   └── app.py              # Streamlit (P1) entry point
+├── CONTRIBUTING.md         # Collaboration + AI/LLM rules
 ├── docker-compose.yml      # Postgres + pgAdmin + n8n + Gotenberg
 ├── .env.example
 └── README.md
@@ -119,10 +124,11 @@ These are **test fixtures**, not bugs.
 - Preserve the data contracts unless the team explicitly approves a change.
 - Never silently redesign architecture, replace n8n/Postgres, or remove P0 requirements.
 - Never remove the three deliberate failure cases.
-- Use the **Universal LLM Guardrails** prompt from the Collaboration Guide before asking any AI to write code.
+- Use the Universal LLM Guardrails from the Collaboration Guide before asking any AI to write code.
 - GREEN changes (own component, no interface break) can proceed; YELLOW/RED require team review.
 
-Full repository workflow rules live in [`CONTRIBUTING.md`](CONTRIBUTING.md). Current implementation gaps and validation findings live in [`docs/REPO_STATUS.md`](docs/REPO_STATUS.md). The Masterplan v3 (FINAL) and Contributor & AI Collaboration Guide remain the project-level specification.
+Full repository workflow rules: [`CONTRIBUTING.md`](CONTRIBUTING.md)  
+Current status & validation findings: [`docs/REPO_STATUS.md`](docs/REPO_STATUS.md)
 
 ---
 
@@ -131,7 +137,7 @@ Full repository workflow rules live in [`CONTRIBUTING.md`](CONTRIBUTING.md). Cur
 | ID     | Owner   | Component | Task                          | Status  |
 |--------|---------|-----------|-------------------------------|---------|
 | DB-001 | Person A| Database  | Schema                        | DONE    |
-| DB-002 | Person A| Database  | Seed data + 3 conflicts       | DONE    |
+| DB-002 | Person A| Database  | Seed data + 3 conflict scenarios | DONE (validated) |
 | DB-003 | Person A| Infra     | Docker Compose (full stack)   | DONE    |
 | ALG-001| Person B| Algorithm | Adjacency + DSATUR v1         | PENDING |
 | CON-001| B + C   | Contracts | Validate mock JSON            | PENDING |
@@ -150,6 +156,6 @@ Use ngrok **only** if Slack interactive buttons need to call back into n8n, and 
 ## Next Steps for the Team
 
 1. All five roles confirm data contracts + scope-cut ladder + deployment rule.
-2. Person B starts ALG-001 (adjacency matrix + DSATUR) against the locked contract.
+2. Person B starts ALG-001 (adjacency matrix + DSATUR) against the locked contract and the now-validated fixtures.
 3. Person C starts the n8n skeleton (DB node → Code node → IF).
-4. Keep the Collaboration Guide and this README as the single source of truth for LLMs.
+4. Keep `CONTRIBUTING.md` and this README as the single source of truth for LLMs.
