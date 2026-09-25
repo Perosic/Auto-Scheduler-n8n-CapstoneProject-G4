@@ -3,7 +3,7 @@
 
 University Course Timetable Conflict-Free Auto-Scheduler built around **n8n** as the orchestration core.
 
-> **Status**: Day-1 ready scaffold. Collaborators can clone and start immediately.
+> **Status**: Day-1 scaffold. Collaborators can clone and start immediately; P0 implementation is still in progress.
 
 ---
 
@@ -87,9 +87,12 @@ These are **test fixtures**, not bugs.
 │   └── seed_data.sql       # 25 courses including 3 deliberate failures
 ├── contracts/
 │   ├── algo_output.example.json
-│   └── README.md           # Locked interface documentation
+│   ├── CONTRIBUTING.md          # Collaboration + AI/LLM workflow rules
+└── README.md           # Locked interface documentation
 ├── workflows/
 │   └── course_scheduler_workflow.json  # n8n workflow (to be built)
+├── docs/
+│   └── REPO_STATUS.md        # Current implementation/validation status
 ├── frontend/
 │   └── app.py              # Streamlit (P1) entry point
 ├── docker-compose.yml      # Postgres + pgAdmin + n8n + Gotenberg
@@ -119,7 +122,7 @@ These are **test fixtures**, not bugs.
 - Use the **Universal LLM Guardrails** prompt from the Collaboration Guide before asking any AI to write code.
 - GREEN changes (own component, no interface break) can proceed; YELLOW/RED require team review.
 
-Full rules live in the **Contributor & AI Collaboration Guide v1.0** and **Masterplan v3 (FINAL)**.
+Full repository workflow rules live in [`CONTRIBUTING.md`](CONTRIBUTING.md). Current implementation gaps and validation findings live in [`docs/REPO_STATUS.md`](docs/REPO_STATUS.md). The Masterplan v3 (FINAL) and Contributor & AI Collaboration Guide remain the project-level specification.
 
 ---
 
