@@ -1,5 +1,14 @@
 {
   "name": "Course Scheduler Master Workflow",
   "nodes": [],
-  "connections": {}
+  "connections": {},
+  "active": false,
+  "settings": {},
+  "versionId": "1",
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "instanceId": "capstone-g4"
+  },
+  "tags": [],
+  "pinData": {}
 }

@@ -1,0 +1,36 @@
+{
+  "placed": [
+    {
+      "course_id": 1,
+      "section_id": 1,
+      "room_id": 1,
+      "timeslot": "Mon-09:00",
+      "instructor_id": 1
+    },
+    {
+      "course_id": 2,
+      "section_id": 2,
+      "room_id": 2,
+      "timeslot": "Mon-10:00",
+      "instructor_id": 1
+    }
+  ],
+  "unplaced": [
+    {
+      "course_id": 23,
+      "reason_code": "ROOM_CAPACITY",
+      "detail": "Expected enrolment 150 exceeds largest available room capacity 80"
+    },
+    {
+      "course_id": 24,
+      "reason_code": "ROOM_EQUIPMENT",
+      "detail": "Only one computer lab available; conflicts with CSC352"
+    },
+    {
+      "course_id": 25,
+      "reason_code": "CO_ENROLMENT",
+      "detail": "Part of co-enrolment clique (MTH401/402/403) with insufficient free slots"
+    }
+  ],
+  "violations_count": 3
+}
