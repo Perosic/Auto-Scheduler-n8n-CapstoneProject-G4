@@ -1,6 +1,7 @@
 -- ============================================================
 -- seed_data.sql  (Person A / Day 1)
--- 25 courses + 3 deliberately unplaceable cases
+-- -- 28 courses total
+-- 22 normal courses + 6 courses used across 3 deliberate conflict scenarios
 -- These 3 cases are intentional test fixtures – do NOT remove.
 -- ============================================================
 
@@ -141,8 +142,14 @@ SELECT c.course_id, 'A',
        END,
        1
 FROM courses c
-WHERE c.code NOT LIKE '%UNPLACEABLE%'
-  AND c.code NOT IN ('CSC351','CSC352','MTH401','MTH402','MTH403');
+WHERE c.code NOT IN (
+    'CSC999',
+    'CSC351',
+    'CSC352',
+    'MTH401',
+    'MTH402',
+    'MTH403'
+);
 
 -- Sections for the deliberate failures
 INSERT INTO sections (course_id, section_code, instructor_id, duration_slots)
@@ -173,7 +180,30 @@ INSERT INTO course_equipment_req (course_id, equipment_id)
 SELECT c.course_id, e.equipment_id
 FROM courses c, equipment e
 WHERE c.code IN ('CSC351','CSC352') AND e.name = 'computers';
+-- ============================================================
+-- Hard timeslot restrictions for deliberate failure fixtures
+-- ============================================================
 
+-- CSC351 and CSC352:
+-- Both require the same instructor, the same computer lab,
+-- and are restricted to the same single timeslot.
+-- Therefore both cannot be placed successfully.
+INSERT INTO course_allowed_timeslot (course_id, timeslot_id)
+SELECT c.course_id, t.timeslot_id
+FROM courses c
+JOIN timeslots t ON t.label = 'Mon-09:00'
+WHERE c.code IN ('CSC351', 'CSC352');
+
+-- MTH401 / MTH402 / MTH403:
+-- These courses are pairwise co-enrolled, but all three are
+-- restricted to only TWO timeslots.
+-- At least one course must therefore remain unplaced.
+INSERT INTO course_allowed_timeslot (course_id, timeslot_id)
+SELECT c.course_id, t.timeslot_id
+FROM courses c
+CROSS JOIN timeslots t
+WHERE c.code IN ('MTH401', 'MTH402', 'MTH403')
+  AND t.label IN ('Mon-09:00', 'Mon-10:00');
 -- ============================================================
 -- Summary for verification
 -- ============================================================
@@ -182,4 +212,6 @@ WHERE c.code IN ('CSC351','CSC352') AND e.name = 'computers';
 --   1. CSC999          → ROOM_CAPACITY (150 > 80)
 --   2. CSC351 + CSC352 → ROOM_EQUIPMENT / lab contention + same instructor
 --   3. MTH401/402/403  → CO_ENROLMENT clique
--- Total courses: 25
+-- -- Total course records: 28
+-- 22 normal courses
+-- 6 courses participating in 3 deliberate conflict scenarios
