@@ -5,6 +5,7 @@
 -- ============================================================
 
 -- Drop in reverse dependency order (safe for re-init)
+DROP TABLE IF EXISTS course_allowed_timeslot CASCADE;
 DROP TABLE IF EXISTS course_co_enrolment CASCADE;
 DROP TABLE IF EXISTS course_equipment_req CASCADE;
 DROP TABLE IF EXISTS room_equipment CASCADE;
@@ -105,7 +106,15 @@ CREATE TABLE course_equipment_req (
     equipment_id    INTEGER NOT NULL REFERENCES equipment(equipment_id) ON DELETE CASCADE,
     PRIMARY KEY (course_id, equipment_id)
 );
-
+-- Optional hard constraint:
+-- if a course has rows here, it may ONLY be scheduled
+-- in those listed timeslots.
+-- No rows means the course is unrestricted by timeslot.
+CREATE TABLE course_allowed_timeslot (
+    course_id       INTEGER NOT NULL REFERENCES courses(course_id) ON DELETE CASCADE,
+    timeslot_id     INTEGER NOT NULL REFERENCES timeslots(timeslot_id) ON DELETE CASCADE,
+    PRIMARY KEY (course_id, timeslot_id)
+);
 -- ----------------------------------------------------------
 -- Helpful indexes
 -- ----------------------------------------------------------
@@ -121,3 +130,4 @@ COMMENT ON TABLE courses IS 'Normalized course list. Algorithm receives this + i
 COMMENT ON COLUMN courses.requires_lab IS 'Hard constraint: must be placed in a lab room';
 COMMENT ON COLUMN courses.min_capacity IS 'Hard constraint: room.capacity >= this value';
 COMMENT ON TABLE course_co_enrolment IS 'Hard constraint: these two courses cannot share a timeslot';
+COMMENT ON TABLE course_allowed_timeslot IS 'Optional hard constraint. If a course appears here, it may only be scheduled in its listed timeslots. No rows means unrestricted.';
