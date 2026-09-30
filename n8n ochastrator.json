@@ -1,0 +1,215 @@
+{
+  "name": "My workflow 5",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -464,
+        -80
+      ],
+      "id": "f2e8ed98-d883-44bb-9467-f755611a7e77",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "3fe7cd32-3296-4ba5-8e1b-30466d1d7ce7",
+              "leftValue": "={{ $json.unplaced.length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        448,
+        -48
+      ],
+      "id": "2167f975-1608-4590-b0b9-2c7e908f3904",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// CHANGE ONLY THIS LINE TO SWITCH OUTCOMES\n// ============================================\nconst testMode = \"success\";\n   // ← change to \"conflict\" to test TRUE path\n// ============================================\n\nif (testMode === \"success\") {\n  // FALSE path – everything placed\n  return [{\n    json: {\n      placed: [\n        { course_id: \"CSC101\", room_id: \"R001\", timeslot: \"MON_08_10\" },\n        { course_id: \"MTH102\", room_id: \"R002\", timeslot: \"MON_10_12\" },\n        { course_id: \"PHY201\", room_id: \"R001\", timeslot: \"TUE_08_10\" },\n        { course_id: \"ENG103\", room_id: \"R002\", timeslot: \"WED_12_14\" },\n        { course_id: \"CHM110\", room_id: \"R001\", timeslot: \"THU_14_16\" },\n        { course_id: \"CSC210\", room_id: \"R002\", timeslot: \"FRI_10_12\" }\n      ],\n      unplaced: [],\n      violations_count: 0\n    }\n  }];\n} else {\n  // TRUE path – there are conflicts\n  return [{\n    json: {\n      placed: [\n        { course_id: \"CSC101\", room_id: \"R001\", timeslot: \"MON_08_10\" },\n        { course_id: \"MTH102\", room_id: \"R002\", timeslot: \"MON_10_12\" },\n        { course_id: \"PHY201\", room_id: \"R001\", timeslot: \"TUE_08_10\" }\n      ],\n      unplaced: [\n        {\n          course_id: \"ENG103\",\n          reason_code: \"ROOM_CAPACITY\",\n          detail: \"Needs 150 seats, largest available room has 120\"\n        },\n        {\n          course_id: \"CHM110\",\n          reason_code: \"PROFESSOR_CLASH\",\n          detail: \"Professor P005 already assigned at this time\"\n        },\n        {\n          course_id: \"CSC210\",\n          reason_code: \"NO_AVAILABLE_SLOT\",\n          detail: \"No free room and time slot combination left\"\n        }\n      ],\n      violations_count: 3\n    }\n  }];\n}\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        336,
+        -240
+      ],
+      "id": "5ea7ecc5-49aa-48b7-af3c-72088dd6c361",
+      "name": "algorithm node"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// HTML Timetable Generator\n// ============================================\n\nconst data = $input.first().json;\nconst placed = data.placed || [];\n\n// Get unique days and sort time slots\nconst dayOrder = [\"Monday\", \"Tuesday\", \"Wednesday\", \"Thursday\", \"Friday\"];\nconst timeSlots = data.time_slots || [];\n\n// Create a lookup: timeslot → {day, start_time, end_time}\nconst slotInfo = {};\ntimeSlots.forEach(slot => {\n  slotInfo[slot.slot_id] = slot;\n});\n\n// Group placed courses by day + time\nconst timetable = {}; // day → time label → list of courses\n\nplaced.forEach(item => {\n  const slot = slotInfo[item.timeslot];\n  if (!slot) return;\n\n  const day = slot.day;\n  const timeLabel = `${slot.start_time} - ${slot.end_time}`;\n\n  if (!timetable[day]) timetable[day] = {};\n  if (!timetable[day][timeLabel]) timetable[day][timeLabel] = [];\n\n  timetable[day][timeLabel].push({\n    course_id: item.course_id,\n    course_name: item.course_name || item.course_id,\n    room_id: item.room_id,\n    room_name: item.room_name || item.room_id\n  });\n});\n\n// Collect all unique time labels in order\nconst allTimes = [...new Set(\n  timeSlots.map(s => `${s.start_time} - ${s.end_time}`)\n)];\n\n// Build HTML\nlet html = `<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UTF-8\">\n  <title>University Timetable</title>\n  <style>\n    body {\n      font-family: Arial, sans-serif;\n      margin: 40px;\n      background: #f0f4f8;\n      color: #1a202c;\n    }\n    h1 {\n      text-align: center;\n      color: #2b6cb0;\n      margin-bottom: 10px;\n    }\n    .subtitle {\n      text-align: center;\n      color: #718096;\n      margin-bottom: 30px;\n    }\n    table {\n      width: 100%;\n      border-collapse: collapse;\n      background: white;\n      box-shadow: 0 4px 12px rgba(0,0,0,0.08);\n      border-radius: 8px;\n      overflow: hidden;\n    }\n    th, td {\n      border: 1px solid #e2e8f0;\n      padding: 14px 10px;\n      text-align: center;\n      vertical-align: middle;\n    }\n    th {\n      background: #2b6cb0;\n      color: white;\n      font-weight: 600;\n    }\n    td {\n      min-height: 70px;\n    }\n    .time-col {\n      background: #edf2f7;\n      font-weight: 600;\n      width: 140px;\n    }\n    .course {\n      background: #ebf8ff;\n      border-radius: 6px;\n      padding: 8px;\n      margin: 4px 0;\n      font-size: 13px;\n      line-height: 1.4;\n    }\n    .course strong {\n      color: #2b6cb0;\n    }\n    .room {\n      color: #4a5568;\n      font-size: 12px;\n    }\n    .empty {\n      color: #a0aec0;\n    }\n  </style>\n</head>\n<body>\n  <h1>University Course Timetable</h1>\n  <p class=\"subtitle\">Generated by Auto-Scheduler • ${placed.length} courses placed</p>\n  <table>\n    <thead>\n      <tr>\n        <th>Time</th>\n        ${dayOrder.map(day => `<th>${day}</th>`).join(\"\")}\n      </tr>\n    </thead>\n    <tbody>\n`;\n\nallTimes.forEach(timeLabel => {\n  html += `      <tr>\n        <td class=\"time-col\">${timeLabel}</td>`;\n\n  dayOrder.forEach(day => {\n    const entries = (timetable[day] && timetable[day][timeLabel]) || [];\n\n    if (entries.length === 0) {\n      html += `<td><span class=\"empty\">—</span></td>`;\n    } else {\n      const content = entries.map(e => `\n        <div class=\"course\">\n          <strong>${e.course_id}</strong><br>\n          ${e.course_name}<br>\n          <span class=\"room\">${e.room_name} (${e.room_id})</span>\n        </div>`).join(\"\");\n      html += `<td>${content}</td>`;\n    }\n  });\n\n  html += `\n      </tr>\n`;\n});\n\nhtml += `    </tbody>\n  </table>\n</body>\n</html>`;\n\n// Return clean HTML + downloadable file\nreturn [{\n  json: {\n    html: html,\n    placed_count: placed.length,\n    unplaced_count: (data.unplaced || []).length\n  },\n  binary: {\n    data: {\n      data: Buffer.from(html, 'utf-8').toString('base64'),\n      mimeType: 'text/html',\n      fileName: 'timetable.html'\n    }\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        688,
+        -32
+      ],
+      "id": "f4bc59af-d27d-49a4-93f4-252cf9588176",
+      "name": "timetable html"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// Adjacency List Builder\n// ============================================\n\nconst data = $input.first().json;\nconst students = data.students || [];\nconst courses = data.courses || [];\n\n// Initialize empty adjacency list for every course\nconst adjacency = {};\ncourses.forEach(course => {\n  adjacency[course.course_id] = new Set();\n});\n\n// Build conflicts from student enrolments\n// If two courses share a student → they conflict\nstudents.forEach(student => {\n  const enrolled = student.courses || [];\n\n  for (let i = 0; i < enrolled.length; i++) {\n    for (let j = i + 1; j < enrolled.length; j++) {\n      const c1 = enrolled[i];\n      const c2 = enrolled[j];\n\n      if (adjacency[c1] && adjacency[c2]) {\n        adjacency[c1].add(c2);\n        adjacency[c2].add(c1);\n      }\n    }\n  }\n});\n\n// Convert Sets to sorted arrays (easier to read)\nconst adjacencyList = {};\nObject.keys(adjacency).forEach(courseId => {\n  adjacencyList[courseId] = Array.from(adjacency[courseId]).sort();\n});\n\n// Return the result + original data\nreturn [{\n  json: {\n    ...data,\n    adjacency_list: adjacencyList,\n    adjacency_built: true\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -144,
+        -64
+      ],
+      "id": "969aea73-373b-4796-913f-275d0777af18",
+      "name": "adjacency builder"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// DSATUR Scheduler (Time Slot Assignment)\n// ============================================\n\nconst data = $input.first().json;\nconst adjacency = data.adjacency_list || {};\nconst timeSlots = data.time_slots || [];\nconst courses = Object.keys(adjacency);\n\n// Map colour numbers to actual time slot IDs\nconst colourToSlot = {};\ntimeSlots.forEach((slot, index) => {\n  colourToSlot[index + 1] = slot.slot_id;\n});\n\n// DSATUR state\nconst saturation = {};      // how many different colours are already used by neighbours\nconst degree = {};          // number of neighbours\nconst colour = {};          // assigned colour (0 = uncoloured)\nconst uncoloured = new Set(courses);\n\ncourses.forEach(c => {\n  saturation[c] = 0;\n  degree[c] = (adjacency[c] || []).length;\n  colour[c] = 0;\n});\n\n// Helper: get the saturation degree of a course\nfunction getSaturation(course) {\n  const usedColours = new Set();\n  (adjacency[course] || []).forEach(neighbour => {\n    if (colour[neighbour] !== 0) {\n      usedColours.add(colour[neighbour]);\n    }\n  });\n  return usedColours.size;\n}\n\n// Main DSATUR loop\nwhile (uncoloured.size > 0) {\n  // Pick the uncoloured course with highest saturation\n  // (break ties with highest degree)\n  let selected = null;\n  let maxSat = -1;\n  let maxDeg = -1;\n\n  for (const c of uncoloured) {\n    const sat = getSaturation(c);\n    const deg = degree[c];\n\n    if (sat > maxSat || (sat === maxSat && deg > maxDeg)) {\n      maxSat = sat;\n      maxDeg = deg;\n      selected = c;\n    }\n  }\n\n  // Find the smallest colour not used by any neighbour\n  const forbidden = new Set();\n  (adjacency[selected] || []).forEach(n => {\n    if (colour[n] !== 0) forbidden.add(colour[n]);\n  });\n\n  let chosenColour = 1;\n  while (forbidden.has(chosenColour)) {\n    chosenColour++;\n  }\n\n  // Assign the colour\n  colour[selected] = chosenColour;\n  uncoloured.delete(selected);\n}\n\n// Build the result: course → time slot\nconst timeAssignments = {};\nconst placed = [];\nconst unplaced = [];\n\ncourses.forEach(courseId => {\n  const colourNum = colour[courseId];\n  const slotId = colourToSlot[colourNum];\n\n  if (slotId) {\n    timeAssignments[courseId] = slotId;\n    placed.push({\n      course_id: courseId,\n      timeslot: slotId\n      // room will be assigned in the next step\n    });\n  } else {\n    unplaced.push({\n      course_id: courseId,\n      reason_code: \"NO_AVAILABLE_SLOT\",\n      detail: \"Not enough time slots to avoid conflicts\"\n    });\n  }\n});\n\nreturn [{\n  json: {\n    ...data,\n    time_assignments: timeAssignments,\n    placed: placed,\n    unplaced: unplaced,\n    violations_count: unplaced.length,\n    dsatur_completed: true\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        32,
+        -48
+      ],
+      "id": "5653ea10-ba0b-4a83-bed8-8a45f36fec38",
+      "name": "dsatur scheduler"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// Room Assigner\n// ============================================\n\nconst data = $input.first().json;\nconst placed = data.placed || [];\nconst rooms = data.rooms || [];\nconst courses = data.courses || [];\nconst timeSlots = data.time_slots || [];\n\n// Quick lookup maps\nconst courseMap = {};\ncourses.forEach(c => courseMap[c.course_id] = c);\n\nconst roomUsage = {}; // track which rooms are used in which time slot\ntimeSlots.forEach(slot => {\n  roomUsage[slot.slot_id] = new Set();\n});\n\nconst finalPlaced = [];\nconst unplaced = [...(data.unplaced || [])];\n\nplaced.forEach(item => {\n  const course = courseMap[item.course_id];\n  if (!course) {\n    unplaced.push({\n      course_id: item.course_id,\n      reason_code: \"COURSE_NOT_FOUND\",\n      detail: \"Course data missing\"\n    });\n    return;\n  }\n\n  const neededCapacity = course.expected_students;\n  const neededEquipment = course.required_equipment || [];\n  const slotId = item.timeslot;\n\n  // Find a suitable free room\n  let assignedRoom = null;\n\n  for (const room of rooms) {\n    // Check if room is already used in this time slot\n    if (roomUsage[slotId] && roomUsage[slotId].has(room.room_id)) continue;\n\n    // Check capacity\n    if (room.capacity < neededCapacity) continue;\n\n    // Check equipment\n    const hasAllEquipment = neededEquipment.every(eq => \n      (room.equipment || []).includes(eq)\n    );\n    if (!hasAllEquipment) continue;\n\n    // Room is suitable\n    assignedRoom = room;\n    break;\n  }\n\n  if (assignedRoom) {\n    roomUsage[slotId].add(assignedRoom.room_id);\n    finalPlaced.push({\n      course_id: item.course_id,\n      room_id: assignedRoom.room_id,\n      timeslot: item.timeslot,\n      course_name: course.course_name,\n      room_name: assignedRoom.room_name\n    });\n  } else {\n    unplaced.push({\n      course_id: item.course_id,\n      reason_code: \"NO_SUITABLE_ROOM\",\n      detail: `No free room with capacity ≥ ${neededCapacity} and required equipment`\n    });\n  }\n});\n\nreturn [{\n  json: {\n    ...data,\n    placed: finalPlaced,\n    unplaced: unplaced,\n    violations_count: unplaced.length,\n    rooms_assigned: true\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        192,
+        -48
+      ],
+      "id": "317bff5b-17ee-4de2-abad-85b647261ed5",
+      "name": "room assigner"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// Database with light randomisation\n// ============================================\n\n// 50% chance of creating a conflict\nconst createConflict = Math.random() < 0.5;\n\nconst courses = [\n  {\n    course_id: \"C01\",\n    course_name: \"CSC101 - Introduction to Computing\",\n    lecturer_id: \"L01\",\n    expected_students: 35,\n    required_equipment: [\"Projector\"]\n  },\n  {\n    course_id: \"C02\",\n    course_name: \"MTH101 - Mathematics I\",\n    lecturer_id: \"L02\",\n    expected_students: 40,\n    required_equipment: []\n  },\n  {\n    course_id: \"C03\",\n    course_name: \"PHY101 - Physics I\",\n    lecturer_id: \"L03\",\n    expected_students: 30,\n    required_equipment: [\"Projector\"]\n  },\n  {\n    course_id: \"C04\",\n    course_name: \"STA101 - Statistics I\",\n    lecturer_id: \"L04\",\n    expected_students: 35,\n    required_equipment: [\"Projector\"]\n  },\n  {\n    course_id: \"C05\",\n    course_name: \"CSC102 - Programming Fundamentals\",\n    lecturer_id: \"L01\",\n    expected_students: 30,\n    required_equipment: [\"Computer Lab\"]\n  },\n  {\n    course_id: \"C06\",\n    course_name: \"MTH102 - Mathematics II\",\n    lecturer_id: \"L02\",\n    expected_students: 30,\n    required_equipment: []\n  },\n  {\n    course_id: \"C07\",\n    course_name: \"PHY102 - Physics II\",\n    lecturer_id: \"L03\",\n    expected_students: 25,\n    required_equipment: [\"Projector\"]\n  },\n  {\n    course_id: \"C08\",\n    course_name: \"ENG101 - Communication Skills\",\n    lecturer_id: \"L05\",\n    // This is the course we randomise\n    expected_students: createConflict ? 48 : 35,\n    required_equipment: [\"Projector\"]\n  },\n  {\n    course_id: \"C09\",\n    course_name: \"BUS101 - Introduction to Business\",\n    lecturer_id: \"L06\",\n    expected_students: 40,\n    required_equipment: []\n  },\n  {\n    course_id: \"C10\",\n    course_name: \"CSC201 - Data Structures\",\n    lecturer_id: \"L01\",\n    expected_students: 25,\n    required_equipment: [\"Computer Lab\"]\n  }\n];\n\nreturn [{\n  json: {\n    dataset_name: \"University Course Timetable Auto-Scheduler\",\n    version: \"1.0\",\n    conflict_mode: createConflict ? \"yes\" : \"no\",\n\n    courses: courses,\n\n    students: [\n      { student_id: \"S01\", courses: [\"C01\", \"C02\", \"C03\"] },\n      { student_id: \"S02\", courses: [\"C01\", \"C02\", \"C04\"] },\n      { student_id: \"S03\", courses: [\"C01\", \"C05\", \"C06\"] },\n      { student_id: \"S04\", courses: [\"C02\", \"C03\", \"C07\"] },\n      { student_id: \"S05\", courses: [\"C02\", \"C04\", \"C08\"] },\n      { student_id: \"S06\", courses: [\"C03\", \"C07\", \"C09\"] },\n      { student_id: \"S07\", courses: [\"C04\", \"C08\", \"C09\"] },\n      { student_id: \"S08\", courses: [\"C05\", \"C06\", \"C10\"] },\n      { student_id: \"S09\", courses: [\"C01\", \"C05\", \"C10\"] },\n      { student_id: \"S10\", courses: [\"C06\", \"C08\", \"C09\"] },\n      { student_id: \"S11\", courses: [\"C01\", \"C02\", \"C03\"] },\n      { student_id: \"S12\", courses: [\"C02\", \"C04\", \"C08\"] },\n      { student_id: \"S13\", courses: [\"C03\", \"C07\", \"C09\"] },\n      { student_id: \"S14\", courses: [\"C05\", \"C06\", \"C10\"] },\n      { student_id: \"S15\", courses: [\"C01\", \"C05\", \"C10\"] },\n      { student_id: \"S16\", courses: [\"C06\", \"C08\", \"C09\"] },\n      { student_id: \"S17\", courses: [\"C01\", \"C02\", \"C04\"] },\n      { student_id: \"S18\", courses: [\"C02\", \"C03\", \"C07\"] },\n      { student_id: \"S19\", courses: [\"C04\", \"C08\", \"C09\"] },\n      { student_id: \"S20\", courses: [\"C05\", \"C06\", \"C10\"] }\n    ],\n\n    lecturers: [\n      { lecturer_id: \"L01\", lecturer_name: \"Dr. Ahmed\", available_slots: [\"T01\", \"T02\", \"T03\", \"T05\", \"T06\", \"T07\"] },\n      { lecturer_id: \"L02\", lecturer_name: \"Dr. Fatima\", available_slots: [\"T01\", \"T02\", \"T04\", \"T05\", \"T06\", \"T08\"] },\n      { lecturer_id: \"L03\", lecturer_name: \"Dr. Yusuf\", available_slots: [\"T02\", \"T03\", \"T04\", \"T06\", \"T07\", \"T08\"] },\n      { lecturer_id: \"L04\", lecturer_name: \"Dr. Aisha\", available_slots: [\"T01\", \"T03\", \"T04\", \"T05\", \"T07\", \"T08\"] },\n      { lecturer_id: \"L05\", lecturer_name: \"Dr. Ibrahim\", available_slots: [\"T01\", \"T02\", \"T03\", \"T04\", \"T05\", \"T06\", \"T07\", \"T08\"] },\n      { lecturer_id: \"L06\", lecturer_name: \"Dr. Maryam\", available_slots: [\"T02\", \"T03\", \"T05\", \"T06\", \"T07\", \"T08\"] }\n    ],\n\n    rooms: [\n      { room_id: \"R01\", room_name: \"Lecture Hall A\", capacity: 50, equipment: [\"Projector\"] },\n      { room_id: \"R02\", room_name: \"Lecture Hall B\", capacity: 40, equipment: [\"Projector\"] },\n      { room_id: \"R03\", room_name: \"Lecture Room C\", capacity: 30, equipment: [] },\n      { room_id: \"R04\", room_name: \"Computer Lab\", capacity: 35, equipment: [\"Computer Lab\", \"Projector\"] }\n    ],\n\n    time_slots: [\n      { slot_id: \"T01\", day: \"Monday\", start_time: \"08:00\", end_time: \"10:00\" },\n      { slot_id: \"T02\", day: \"Monday\", start_time: \"10:00\", end_time: \"12:00\" },\n      { slot_id: \"T03\", day: \"Monday\", start_time: \"13:00\", end_time: \"15:00\" },\n      { slot_id: \"T04\", day: \"Monday\", start_time: \"15:00\", end_time: \"17:00\" },\n      { slot_id: \"T05\", day: \"Tuesday\", start_time: \"08:00\", end_time: \"10:00\" },\n      { slot_id: \"T06\", day: \"Tuesday\", start_time: \"10:00\", end_time: \"12:00\" },\n      { slot_id: \"T07\", day: \"Tuesday\", start_time: \"13:00\", end_time: \"15:00\" },\n      { slot_id: \"T08\", day: \"Tuesday\", start_time: \"15:00\", end_time: \"17:00\" }\n    ]\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -320,
+        -64
+      ],
+      "id": "1a2f4736-0ecc-4df2-8442-70dfe2835a56",
+      "name": "database node"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "database node",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [],
+        [
+          {
+            "node": "timetable html",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "algorithm node": {
+      "main": [
+        []
+      ]
+    },
+    "adjacency builder": {
+      "main": [
+        [
+          {
+            "node": "dsatur scheduler",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "dsatur scheduler": {
+      "main": [
+        [
+          {
+            "node": "room assigner",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "room assigner": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "database node": {
+      "main": [
+        [
+          {
+            "node": "adjacency builder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "0f32d485-171f-4361-b5cb-234fee188c85",
+  "meta": {
+    "instanceId": "69fe1d7059be86b71589a59a85966466ae7a79018d1db25737f08dba1cde94b2"
+  },
+  "nodeGroups": [],
+  "id": "ce2pqeDK2UosGWuE",
+  "tags": []
+}
