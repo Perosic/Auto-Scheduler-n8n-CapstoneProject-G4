@@ -215,11 +215,12 @@ def dsatur_schedule(graph, courses, timeslots, allowed_timeslots):
         course = course_lookup[course_id]
 
         unplaced.append({
-            "course_id": course_id,
-            "code": course["code"],
-            "title": course["title"],
-            "reason": "No legal timeslot available"
-        })
+    "course_id": course_id,
+    "code": course["code"],
+    "title": course["title"],
+    "reason_code": "OTHER",
+    "detail": "No legal timeslot available"
+})
 
     # ---------------------------------------------------------
     # 9. Return result
