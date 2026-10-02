@@ -70,3 +70,7 @@ dist/
 coverage/
 *.lcov
 .nyc_output/
+
+# Python
+__pycache__/
+*.py[cod]
