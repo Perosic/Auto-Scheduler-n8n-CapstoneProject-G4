@@ -47,9 +47,11 @@ def load_from_postgres() -> Dict[str, Any]:
             s.section_id,
             s.section_code,
             s.instructor_id,
+            i.full_name AS lecturer,
             s.duration_slots
         FROM courses c
         JOIN sections s ON s.course_id = c.course_id
+        JOIN instructors i ON i.instructor_id = s.instructor_id
         ORDER BY c.course_id;
     """)
     courses = cur.fetchall()
@@ -121,16 +123,23 @@ def load_data() -> Dict[str, Any]:
     (we will add a JSON fallback later if needed).
     """
     if not PSYCOPG2_AVAILABLE:
-        raise RuntimeError("psycopg2 is not installed. Run: pip install -r algorithm/requirements.txt")
+        raise RuntimeError(
+            "psycopg2 is not installed. "
+            "Run: pip install -r algorithm/requirements.txt"
+        )
 
     try:
         data = load_from_postgres()
-        print(f"[db_loader] Loaded {len(data['courses'])} course-sections from Postgres")
+        print(
+            f"[db_loader] Loaded "
+            f"{len(data['courses'])} course-sections from Postgres"
+        )
         return data
     except Exception as e:
         raise RuntimeError(
             f"Could not connect to Postgres.\n"
-            f"Make sure docker compose is running (postgres on localhost:5432).\n"
+            f"Make sure docker compose is running "
+            f"(postgres on localhost:5432).\n"
             f"Original error: {e}"
         )
 
