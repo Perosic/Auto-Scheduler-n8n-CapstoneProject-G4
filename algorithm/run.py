@@ -53,6 +53,7 @@ def run_scheduler():
             "course_id": item["course_id"],
             "course": item["code"],
             "title": item["title"],
+            "lecturer": item.get("lecturer"),
             "day": item["day_of_week"],
             "time": f"{item['start_time']} - {item['end_time']}",
             "timeslot_id": item["timeslot_id"],
@@ -69,7 +70,10 @@ def run_scheduler():
         "success": success,
         "placed": placed,
         "unplaced": all_unplaced,
-        "violations_count": len(verification["errors"]),
+        "violations_count": (
+            len(all_unplaced)
+            + len(verification["errors"])
+        ),
         "verification_errors": verification["errors"]
     }
 
