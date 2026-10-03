@@ -127,6 +127,7 @@ def assign_rooms(
             unplaced.append({
                 "course_id": course_id,
                 "code": course["code"],
+                "title": course["title"],
                 "reason_code": "ROOM_CAPACITY",
                 "detail": (
                     f"Requires capacity {required_capacity}; "
@@ -168,6 +169,7 @@ def assign_rooms(
             unplaced.append({
                 "course_id": course_id,
                 "code": course["code"],
+                "title": course["title"],
                 "reason_code": "ROOM_EQUIPMENT",
                 "detail": (
                     "No room satisfies the required "
@@ -191,6 +193,7 @@ def assign_rooms(
             unplaced.append({
                 "course_id": course_id,
                 "code": course["code"],
+                "title": course["title"],
                 "reason_code": "OTHER",
                 "detail": (
                     "Suitable rooms exist but are already "
@@ -213,6 +216,7 @@ def assign_rooms(
 
         placed.append({
             **item,
+            "lecturer": course.get("lecturer"),
             "room_id": selected_room["room_id"],
             "room_code": selected_room["code"],
             "room_capacity": selected_room["capacity"]
