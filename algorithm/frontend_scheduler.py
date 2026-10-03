@@ -13,7 +13,26 @@ from algorithm.verifier import verify_schedule
 
 
 def run_scheduler_for_courses(course_codes, uploaded_enrolments=None):
-    """Run the existing scheduler for courses selected from the P1 CSV."""
+    """
+    Run the existing scheduler for courses selected from the P1 CSV.
+
+    course_codes:
+        List of course codes from the uploaded CSV.
+
+    uploaded_enrolments:
+        Optional dictionary:
+        {
+            "CSC101": 55,
+            "CSC201": 45
+        }
+
+    Returns:
+        Dictionary containing schedule results for Streamlit.
+    """
+
+    # ---------------------------------------------------------
+    # 1. Load existing PostgreSQL scheduling data
+    # ---------------------------------------------------------
 
     data = load_data()
 
@@ -24,7 +43,13 @@ def run_scheduler_for_courses(course_codes, uploaded_enrolments=None):
     }
 
     if not requested_codes:
-        raise ValueError("No course codes were provided by the CSV.")
+        raise ValueError(
+            "No course codes were provided by the CSV."
+        )
+
+    # ---------------------------------------------------------
+    # 2. Match CSV courses against database courses
+    # ---------------------------------------------------------
 
     db_courses = data["courses"]
 
@@ -39,8 +64,8 @@ def run_scheduler_for_courses(course_codes, uploaded_enrolments=None):
 
     if missing_codes:
         raise ValueError(
-            "The following courses from the CSV are not available "
-            "in the scheduling database: "
+            "The following courses from the CSV are not "
+            "available in the scheduling database: "
             + ", ".join(missing_codes)
         )
 
@@ -49,19 +74,31 @@ def run_scheduler_for_courses(course_codes, uploaded_enrolments=None):
         for code in requested_codes
     }
 
+    # ---------------------------------------------------------
+    # 3. Build selected course records
+    # ---------------------------------------------------------
+
     uploaded_enrolments = uploaded_enrolments or {}
 
     selected_courses = []
 
     for code in sorted(requested_codes):
-        course = dict(db_by_code[code])
 
+        original = db_by_code[code]
+
+        course = dict(original)
+
+        # Use CSV student count when supplied.
         if code in uploaded_enrolments:
             course["expected_enrolment"] = int(
                 uploaded_enrolments[code]
             )
 
         selected_courses.append(course)
+
+    # ---------------------------------------------------------
+    # 4. Filter constraints for selected courses
+    # ---------------------------------------------------------
 
     selected_co_enrolments = [
         row
@@ -84,29 +121,46 @@ def run_scheduler_for_courses(course_codes, uploaded_enrolments=None):
         if row["course_id"] in selected_course_ids
     ]
 
+    # Rooms and timeslots remain global resources.
     rooms = data["rooms"]
     timeslots = data["timeslots"]
     room_equipment = data["room_equipment"]
 
+    # ---------------------------------------------------------
+    # 5. Build conflict graph
+    # ---------------------------------------------------------
+
     graph = build_conflict_graph(
         selected_courses,
-        selected_co_enrolments,
+        selected_co_enrolments
     )
+
+    # ---------------------------------------------------------
+    # 6. DSATUR timetable assignment
+    # ---------------------------------------------------------
 
     dsatur_result = dsatur_schedule(
         graph,
         selected_courses,
         timeslots,
-        selected_allowed_timeslots,
+        selected_allowed_timeslots
     )
+
+    # ---------------------------------------------------------
+    # 7. Assign rooms
+    # ---------------------------------------------------------
 
     room_result = assign_rooms(
         dsatur_result["schedule"],
         selected_courses,
         rooms,
         selected_equipment_reqs,
-        room_equipment,
+        room_equipment
     )
+
+    # ---------------------------------------------------------
+    # 8. Independent verification
+    # ---------------------------------------------------------
 
     verification = verify_schedule(
         room_result["placed"],
@@ -116,37 +170,51 @@ def run_scheduler_for_courses(course_codes, uploaded_enrolments=None):
         selected_allowed_timeslots,
         rooms,
         selected_equipment_reqs,
-        room_equipment,
+        room_equipment
     )
+
+    # ---------------------------------------------------------
+    # 9. Combine unplaced courses
+    # ---------------------------------------------------------
 
     all_unplaced = (
         dsatur_result["unplaced"]
         + room_result["unplaced"]
     )
 
+    # ---------------------------------------------------------
+    # 10. Format timetable for Streamlit
+    # ---------------------------------------------------------
+
     placed = []
 
     for item in room_result["placed"]:
-        placed.append(
-            {
-                "course_id": item["course_id"],
-                "course": item["code"],
-                "title": item["title"],
-                "lecturer": item.get("lecturer"),
-                "day": item["day_of_week"],
-                "time": (
-                    f"{item['start_time']} - "
-                    f"{item['end_time']}"
-                ),
-                "timeslot_id": item["timeslot_id"],
-                "timeslot_label": item["timeslot_label"],
-                "room_id": item["room_id"],
-                "room": item["room_code"],
-                "room_capacity": item["room_capacity"],
-            }
-        )
 
-    success = verification["valid"] and not all_unplaced
+        placed.append({
+            "course_id": item["course_id"],
+            "course": item["code"],
+            "title": item["title"],
+            "lecturer": item.get("lecturer"),
+            "day": item["day_of_week"],
+            "time": (
+                f"{item['start_time']} - "
+                f"{item['end_time']}"
+            ),
+            "timeslot_id": item["timeslot_id"],
+            "timeslot_label": item["timeslot_label"],
+            "room_id": item["room_id"],
+            "room": item["room_code"],
+            "room_capacity": item["room_capacity"],
+        })
+
+    # ---------------------------------------------------------
+    # 11. Final status
+    # ---------------------------------------------------------
+
+    success = (
+        verification["valid"]
+        and not all_unplaced
+    )
 
     return {
         "status": "SUCCESS" if success else "CONFLICT",
