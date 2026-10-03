@@ -151,12 +151,16 @@ def run_scheduler_for_courses(course_codes, uploaded_enrolments=None):
     # ---------------------------------------------------------
 
     room_result = assign_rooms(
-        dsatur_result["schedule"],
-        selected_courses,
-        rooms,
-        selected_equipment_reqs,
-        room_equipment
-    )
+    dsatur_result["schedule"],
+    selected_courses,
+    rooms,
+    selected_equipment_reqs,
+    room_equipment,
+    timeslots,
+    selected_allowed_timeslots,
+    graph
+)
+
 
     # ---------------------------------------------------------
     # 8. Independent verification
