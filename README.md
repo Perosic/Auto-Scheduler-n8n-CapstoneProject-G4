@@ -100,7 +100,7 @@ See `/contracts` folder. The exact JSON shape is an **interface contract**.
 
 ## Deliberate Failure Cases (Do Not Remove)
 
-Seed data intentionally contains **three unplaceable courses** so the conflict path is exercised:
+Seed data intentionally contains **six fixture courses across three failure scenarios** so the conflict path is exercised:
 
 1. **CSC999** – enrolment 150 > largest room (80) → `ROOM_CAPACITY`
 2. **CSC351 + CSC352** – two lab courses fighting for the single computer lab + same instructor → `ROOM_EQUIPMENT` / clash
@@ -167,13 +167,13 @@ A zero `violations_count` means the placed schedule passed independent verificat
 ```
 ├── database/
 │   ├── schema.sql          # Full normalized schema + hard-constraint flags
-│   └── seed_data.sql       # 25 courses including 3 deliberate failures
+│   └── seed_data.sql       # 28 courses including 6 deliberate failure fixtures
 ├── contracts/
 │   ├── algo_output.example.json
 │   ├── CONTRIBUTING.md          # Collaboration + AI/LLM workflow rules
 └── README.md           # Locked interface documentation
 ├── workflows/
-│   └── course_scheduler_workflow.json  # n8n workflow (to be built)
+│   └── course_scheduler_workflow.json  # validated n8n workflow export
 ├── docs/
 │   └── REPO_STATUS.md        # Current implementation/validation status
 ├── frontend/
@@ -223,8 +223,8 @@ Full repository workflow rules live in [`CONTRIBUTING.md`](CONTRIBUTING.md). Cur
 | N8N-001| Person C| n8n       | Python API → validation → IF  | DONE |
 | N8N-002| Person C| n8n       | Conflict Handler → Gemini → Success | DONE |
 | N8N-003| Person C| n8n       | Successful/no-conflict → HTML | DONE |
-| DOC-001| Team    | Documentation | Sync README/status          | IN PROGRESS |
-| N8N-004| Person C| n8n       | Export validated workflow JSON | TODO |
+| DOC-001| Team    | Documentation | Sync README/status          | DONE    |
+| N8N-004| Person C| n8n       | Export validated workflow JSON | DONE    |
 | …      | …       | …         | (see Guide for full list)     | …       |
 
 ---
@@ -238,8 +238,7 @@ Use ngrok **only** if Slack interactive buttons need to call back into n8n, and 
 
 ## Next Steps
 
-1. Export the validated n8n workflow from the local n8n instance to `workflows/course_scheduler_workflow.json`.
-2. Update `docs/REPO_STATUS.md` so it no longer describes the repository as a Day-1 scaffold.
-3. Review/merge the Person C API + n8n branch with the team.
-4. Keep the validated P0 pipeline stable while completing presentation/demo work.
-5. Add P1 integrations only after the repository contains the validated workflow export.
+1. Finalize/merge the validated Person C API + n8n branch with the team.
+2. Re-run the clean end-to-end demo from a fresh Docker/database state and record the exact result.
+3. Keep the validated P0 pipeline stable while completing presentation/demo work.
+4. Add P1 integrations only if required by the final presentation scope.
