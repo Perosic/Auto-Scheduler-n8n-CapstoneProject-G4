@@ -1,14 +1,241 @@
 {
   "name": "Course Scheduler Master Workflow",
-  "nodes": [],
-  "connections": {},
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "2hkpao",
+      "name": "When clicking Execute workflow",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8000/schedule",
+        "sendHeaders": false,
+        "options": {}
+      },
+      "id": "python-scheduler",
+      "name": "Python scheduler",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $json;\nconst errors = [];\nif (!Array.isArray(data.placed)) errors.push(\"placed must be an array\");\nif (!Array.isArray(data.unplaced)) errors.push(\"unplaced must be an array\");\nif (typeof data.violations_count !== \"number\") errors.push(\"violations_count must be a number\");\nreturn [{json:{...data, contract_valid: errors.length === 0, contract_errors: errors}}];"
+      },
+      "id": "contract-validation",
+      "name": "Contract Validation",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        460,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.unplaced.length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-unplaced",
+      "name": "If",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        680,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const unplaced = Array.isArray($json.unplaced) ? $json.unplaced : [];\nconst conflicts = unplaced.map(item => ({\n  course_id: item.course_id,\n  code: item.code || item.course || (\"COURSE-\" + item.course_id),\n  title: item.title || \"Untitled course\",\n  reason_code: item.reason_code || \"OTHER\",\n  detail: item.detail || \"No placement detail provided\"\n}));\nreturn [{ json: { status: $json.status, success: $json.success, conflicts, violations_count: $json.violations_count, verification_errors: $json.verification_errors || [] } }];"
+      },
+      "id": "conflict-handler",
+      "name": "conflict handler",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        900,
+        -140
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are the conflict-reporting assistant for a university timetable scheduler.\n\nThe Python scheduling engine is authoritative. Do not invent schedules, rooms, times, resolutions, or causes. Do not claim that a conflict was resolved unless the input explicitly says so.\n\nReview the conflicts below and produce a concise human-readable report. Group similar causes where useful, preserve course codes and details, and clearly state that these courses remain unplaced.\n\nInput:\n{{ JSON.stringify($json.conflicts, null, 2) }}",
+        "options": {}
+      },
+      "id": "ai-agent",
+      "name": "AI Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.8,
+      "position": [
+        1140,
+        -140
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "gemini-chat-model",
+      "name": "Google Gemini Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        1140,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const output = $json.output ?? $json.text ?? \"No conflict summary was returned.\";\nreturn [{json:{status:\"CONFLICT\",summary:output}}];"
+      },
+      "id": "conflict-success",
+      "name": "Conflict Success",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1390,
+        -140
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const placed = Array.isArray($json.placed) ? $json.placed : [];\nconst rows = placed.map(item => \"<tr><td>\" + (item.course ?? \"\") + \"</td><td>\" + (item.title ?? \"\") + \"</td><td>\" + (item.day ?? \"\") + \"</td><td>\" + (item.time ?? \"\") + \"</td><td>\" + (item.room ?? \"\") + \"</td></tr>\").join(\"\");\nconst html = \"<!doctype html><html><head><meta charset=\\\"utf-8\\\"><title>Course Timetable</title><style>body{font-family:Arial,sans-serif;margin:32px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #ccc;padding:8px;text-align:left}th{font-weight:700}</style></head><body><h1>Course Timetable</h1><p>Placed: \" + placed.length + \" | Unplaced: 0</p><table><thead><tr><th>Course</th><th>Title</th><th>Day</th><th>Time</th><th>Room</th></tr></thead><tbody>\" + rows + \"</tbody></table></body></html>\";\nreturn [{ json: { status: \"SUCCESS\", placed_count: placed.length, unplaced_count: 0, html } }];"
+      },
+      "id": "timetable-html",
+      "name": "Timetable HTML generator",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        900,
+        140
+      ]
+    }
+  ],
+  "connections": {
+    "When clicking Execute workflow": {
+      "main": [
+        [
+          {
+            "node": "Python scheduler",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Python scheduler": {
+      "main": [
+        [
+          {
+            "node": "Contract Validation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Contract Validation": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "conflict handler",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Timetable HTML generator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "conflict handler": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Conflict Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Timetable HTML generator": {
+      "main": [
+        []
+      ]
+    }
+  },
   "active": false,
   "settings": {},
-  "versionId": "1",
+  "pinData": {},
   "meta": {
     "templateCredsSetupCompleted": false,
     "instanceId": "capstone-g4"
   },
-  "tags": [],
-  "pinData": {}
+  "tags": []
 }
