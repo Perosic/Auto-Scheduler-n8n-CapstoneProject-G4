@@ -1,0 +1,12 @@
+ID,Course Code,Title,Lecturer,Enrollment
+1,CSC101,Intro to Programming,Dr. Ada Okonkwo,55
+2,CSC201,Data Structures,Dr. Ada Okonkwo,45
+3,CSC301,Algorithms,Dr. Ada Okonkwo,35
+4,CSC302,Database Systems,Dr. Ada Okonkwo,40
+5,CSC401,Software Engineering,Dr. Ada Okonkwo,30
+6,MTH101,Calculus I,Dr. Fatima Bello,60
+7,MTH201,Linear Algebra,Dr. Fatima Bello,50
+8,MTH301,Discrete Mathematics,Dr. Fatima Bello,45
+9,PHY101,General Physics,Mr. Ibrahim Musa,60
+10,PHY201,Electromagnetism,Mr. Ibrahim Musa,35
+11,ENG101,Engineering Drawing,Dr. Ngozi Uche,45
