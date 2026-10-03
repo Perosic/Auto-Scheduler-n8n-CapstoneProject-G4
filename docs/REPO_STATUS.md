@@ -1,57 +1,54 @@
 # Repository Sync & Integration Status
 
-_Last checked: 2026-09-25_
+_Last checked: 2026-10-03_
 
 ## Current state
 
-The repository is a **Day-1 scaffold**, not yet a complete implementation of the P0 scheduler.
+The repository now contains the validated **P0 scheduler pipeline**:
 
-### Present
+PostgreSQL → Python scheduling/verification → HTTP API → n8n orchestration → conflict reporting or HTML timetable output.
+
+### Implemented
 
 - PostgreSQL schema and seed data.
 - Docker Compose for PostgreSQL, pgAdmin, n8n and Gotenberg.
-- Locked algorithm → n8n output contract.
-- Streamlit P1 placeholder.
-- n8n workflow file placeholder.
-- Environment example and secret-oriented .gitignore.
+- Conflict graph and DSATUR timeslot scheduling.
+- Room/resource assignment.
+- Independent schedule verifier.
+- Python GET /health and POST /schedule API.
+- Locked algorithm → n8n output fields.
+- n8n Contract Validation.
+- Conflict routing and Gemini conflict explanation.
+- Successful/no-conflict HTML timetable branch.
+- Reproducible n8n workflow export at workflows/course_scheduler_workflow.json.
 
-### Not yet implemented
+## Validation record
 
-- Scheduling algorithm / DSATUR implementation.
-- Standalone verifier.
-- Real n8n nodes and orchestration.
-- P0 timetable generation.
-- Streamlit CSV processing/calendar.
-- AI conflict workflow.
-- Slack integration.
-- PDF/email integration.
+The local validation covered:
 
-## Important validation findings
+1. Python API health endpoint.
+2. Python scheduling endpoint.
+3. n8n HTTP Request via host.docker.internal.
+4. Contract Validation.
+5. Conflict IF routing.
+6. Conflict Handler.
+7. Gemini AI Agent conflict reporting.
+8. Conflict Success output.
+9. Successful/no-conflict HTML timetable path using successful test input.
 
-The current seed-data comments and README claim **25 courses**, but the SQL currently creates **28 courses**: 22 normal courses plus 6 courses used for the described failure scenarios.
+The seeded database is intentionally capable of producing unplaced courses so the conflict path can be demonstrated. The exact counts should be taken from the latest clean run rather than copied from an older run.
 
-The current data also does not, by itself, guarantee that all described failure scenarios are unplaceable:
+## Fixture note
 
-- CSC999 is genuinely impossible because its required capacity is 150 while the largest room is 80.
-- CSC351 and CSC352 share an instructor and compete for LAB1, but they can still be placed in different timeslots unless another constraint makes them simultaneous.
-- MTH401/MTH402/MTH403 are a co-enrolment clique, but the current schema provides 25 timeslots and no per-course allowed-timeslot restriction, so the clique can be assigned to three different timeslots.
+The seed contains 28 course-sections, including deliberate failure fixtures. Do not remove these fixtures; they are part of the validation/demo design.
 
-Therefore the failure fixtures must be corrected or the constraint model must explicitly represent the intended restrictions before the project can claim that the three conflict paths are proven.
+## Contract note
 
-## Integration contract
+The API currently returns rich placed-course fields (course/title/day/time/timeslot/room) plus the required placed[], unplaced[], violations_count, and verification_errors[] fields used by n8n. The checked-in contract example should be treated as the interface reference and kept synchronized if the public shape changes.
 
-The P0 pipeline remains:
+## Remaining cleanup
 
-PostgreSQL → scheduling algorithm → locked JSON contract → n8n → HTML timetable.
-
-Downstream contributors should use `contracts/algo_output.example.json` as the temporary upstream fixture until the real algorithm exists.
-
-## Recommended next implementation order
-
-1. Validate/finalize the database fixtures and constraint model.
-2. Build the algorithm input adapter.
-3. Implement DSATUR/greedy scheduling.
-4. Implement the independent verifier.
-5. Validate algorithm output against the contract.
-6. Build the n8n DB → algorithm → validation → HTML path.
-7. Add P1 features only after P0 works end-to-end.
+- Run one clean end-to-end validation from a fresh database state and record the exact output.
+- Finalize/merge the Person C branch after team review.
+- Keep P0 stable for the final demo/presentation.
+- Add P1 features only if they are required by the final presentation scope.
