@@ -1,41 +1,131 @@
-# User Guide — Start the Python Scheduler
+# User Guide — Start the Auto-Scheduler Stack
 
-## Purpose
+This is the complete quick-start procedure for running the Auto-Scheduler locally, including Docker/PostgreSQL, the Python scheduler API, Streamlit, and the n8n integration.
 
-This is the quick-start guide for running the project's Python scheduler API locally so that n8n can call it.
+## 1. Prerequisites
 
-The scheduler API is implemented in:
+You need:
 
-```text
-algorithm/api.py
-```
+- Git
+- Docker Desktop
+- Python 3.x
+- The project repository
+- The project's `.venv` virtual environment
 
-It provides:
-
-```text
-GET  /health
-POST /schedule
-```
-
-n8n calls the scheduler at:
+Project directory:
 
 ```text
-http://host.docker.internal:8000/schedule
+C:\Users\hp\Auto-Scheduler-n8n-CapstoneProject-G4
 ```
 
-## 1. Open PowerShell in the project root
+## 2. Install and start Docker Desktop
 
-Go to:
+Install Docker Desktop for your operating system if it is not already installed. After installation, open **Docker Desktop** and wait until Docker reports that it is running.
+
+Verify Docker from PowerShell:
+
+```powershell
+docker --version
+docker compose version
+```
+
+Both commands should return version information.
+
+## 3. Start the project's Docker services
+
+From the repository root:
 
 ```powershell
 cd C:\Users\hp\Auto-Scheduler-n8n-CapstoneProject-G4
 ```
 
-You should be in the repository root, where the `algorithm`, `frontend`, and `n8n` folders are located.
+Check the current containers:
 
-## 2. Activate the virtual environment
+```powershell
+docker compose ps
+```
 
-If it is not already active:
+Start the services defined by the repository's Compose configuration:
+
+```powershell
+docker compose up -d
+```
+
+The first run may download or build the required Docker images. This can take longer than subsequent runs.
+
+If you want to pull the Compose images before starting them:
+
+```powershell
+docker compose pull
+```
+
+Then:
+
+```powershell
+docker compose up -d
+```
+
+**Do not manually invent image names.** Use the images and services defined by this repository's Compose configuration.
+
+Check that the containers are running:
+
+```powershell
+docker compose ps
+```
+
+If a service is still starting, wait a few seconds and run `docker compose ps` again.
+
+To see the services defined by the Compose file:
+
+```powershell
+docker compose config --services
+```
+
+## 4. Confirm PostgreSQL is running
+
+The Python scheduler loads scheduling data from PostgreSQL. If PostgreSQL is not running, the scheduler's `/health` endpoint will report a database connection error such as:
+
+```text
+Could not connect to Postgres
+localhost:5432
+Connection refused
+```
+
+First check:
+
+```powershell
+docker compose ps
+```
+
+Make sure the PostgreSQL service is running.
+
+If needed, inspect the database logs. If the service is named `postgres`:
+
+```powershell
+docker compose logs postgres
+```
+
+If it has another service name, find it with:
+
+```powershell
+docker compose config --services
+```
+
+Then use:
+
+```powershell
+docker compose logs <service-name>
+```
+
+## 5. Activate the Python virtual environment
+
+Open a new PowerShell window and go to the project root:
+
+```powershell
+cd C:\Users\hp\Auto-Scheduler-n8n-CapstoneProject-G4
+```
+
+Activate the virtual environment:
 
 ```powershell
 .\.venv\Scripts\Activate.ps1
@@ -47,15 +137,26 @@ Your prompt should begin with something similar to:
 (.venv) PS C:\Users\hp\Auto-Scheduler-n8n-CapstoneProject-G4>
 ```
 
-## 3. Start the scheduler API
+## 6. Start the Python scheduler API
 
-**Use this command exactly:**
+**Use this exact command:**
 
 ```powershell
 python -m algorithm.api
 ```
 
-### Important
+The API should display something similar to:
+
+```text
+======================================
+ Auto-Scheduler Python API
+ http://localhost:8000
+ POST /schedule
+ GET  /health
+======================================
+```
+
+### Important: do not start it this way
 
 Do **not** use:
 
@@ -63,43 +164,85 @@ Do **not** use:
 python algorithm\api.py
 ```
 
-The API imports the `algorithm` package. Running it with `python -m algorithm.api` starts it as a package module and avoids the `ModuleNotFoundError: No module named 'algorithm'` problem.
-
-Also, do not paste Python statements such as:
-
-```python
-from algorithm.run import run_scheduler
-```
-
-into PowerShell. That is Python code, not a PowerShell command.
-
-The Python `-m` option runs a module through Python's normal module/package import mechanism.
-
-## 4. Leave the scheduler terminal running
-
-Do not close the terminal running:
+The API imports the `algorithm` package. Starting it as a package module with:
 
 ```powershell
 python -m algorithm.api
 ```
 
-The scheduler must remain running while n8n sends requests to it.
+allows imports such as `algorithm.run` to resolve correctly.
 
-## 5. Test the health endpoint
+### Important: Python code is not PowerShell
 
-Open a **second PowerShell window** and run:
+Do not paste Python statements such as:
+
+```python
+from algorithm.run import run_scheduler
+```
+
+into PowerShell. That produces the PowerShell error:
+
+```text
+The 'from' keyword is not supported in this version of the language.
+```
+
+Use the Python module command instead:
+
+```powershell
+python -m algorithm.api
+```
+
+## 7. Keep the scheduler terminal running
+
+Do **not** close the terminal running:
+
+```powershell
+python -m algorithm.api
+```
+
+The scheduler must remain running while Streamlit or n8n sends requests to it.
+
+## 8. Test the scheduler health endpoint
+
+Open a **second PowerShell window**. You can activate the virtual environment there as well:
 
 ```powershell
 cd C:\Users\hp\Auto-Scheduler-n8n-CapstoneProject-G4
 .\.venv\Scripts\Activate.ps1
+```
+
+Then run:
+
+```powershell
 Invoke-RestMethod http://localhost:8000/health
 ```
 
-A successful response confirms that the scheduler API is listening on port `8000`.
+The API should respond successfully when both the Python API and PostgreSQL are available.
 
-## 6. Start Streamlit when needed
+If you receive:
 
-In another terminal, from the project root:
+```text
+Could not connect to Postgres
+localhost:5432
+Connection refused
+```
+
+the Python API is running, but PostgreSQL is not available yet. Return to the Docker steps:
+
+```powershell
+docker compose up -d
+docker compose ps
+```
+
+Then retry:
+
+```powershell
+Invoke-RestMethod http://localhost:8000/health
+```
+
+## 9. Start Streamlit
+
+Open another PowerShell terminal:
 
 ```powershell
 cd C:\Users\hp\Auto-Scheduler-n8n-CapstoneProject-G4
@@ -107,25 +250,19 @@ cd C:\Users\hp\Auto-Scheduler-n8n-CapstoneProject-G4
 streamlit run frontend/app.py
 ```
 
-The Streamlit application should then provide its local URL in the terminal.
+Keep this terminal running while testing the frontend.
 
-## 7. Test the n8n integration
+## 10. n8n integration
 
-Make sure:
-
-1. The Python scheduler terminal is still running.
-2. n8n is running.
-3. The n8n Webhook is configured as `POST`.
-4. The n8n `Python scheduler` HTTP Request node uses:
+The n8n workflow calls the Python scheduler using:
 
 ```text
-Method: POST
-URL: http://host.docker.internal:8000/schedule
+POST http://host.docker.internal:8000/schedule
 ```
 
-5. The Python scheduler node forwards the Webhook request body as JSON.
+This address is important when n8n is running inside Docker and the Python API is running on the Windows host.
 
-The expected flow is:
+The intended flow is:
 
 ```text
 Streamlit / Test Client
@@ -144,46 +281,31 @@ Streamlit / Test Client
        IF
       /  \
  conflict  timetable
-    handling   output
+ handling   output
 ```
 
-## 8. If you see `ModuleNotFoundError: No module named 'algorithm'`
+Before testing the n8n Python Scheduler node, confirm:
 
-First check that the terminal is in the repository root:
+1. Docker Desktop is running.
+2. PostgreSQL is running through Docker Compose.
+3. n8n is running.
+4. The Python API is running on port `8000`.
+5. `Invoke-RestMethod http://localhost:8000/health` succeeds.
+6. The n8n Python Scheduler node uses `POST http://host.docker.internal:8000/schedule`.
 
-```text
-C:\Users\hp\Auto-Scheduler-n8n-CapstoneProject-G4
-```
+## 11. Quick-start: every time you work on the project
 
-Then activate `.venv` and run:
+### Terminal 1 — Docker services
+
+Start Docker Desktop, then:
 
 ```powershell
-python -m algorithm.api
+cd C:\Users\hp\Auto-Scheduler-n8n-CapstoneProject-G4
+docker compose up -d
+docker compose ps
 ```
 
-Do not run `python algorithm\api.py` from the project root for this API.
-
-## 9. If n8n says `ECONNREFUSED` or `The service refused the connection`
-
-This normally means the scheduler API is not running or is not listening on port `8000`.
-
-Check:
-
-```powershell
-Invoke-RestMethod http://localhost:8000/health
-```
-
-If that fails, return to the scheduler terminal and start it again:
-
-```powershell
-python -m algorithm.api
-```
-
-Keep the scheduler terminal open while testing n8n.
-
-## Quick reference
-
-### Terminal 1 — Python scheduler
+### Terminal 2 — Python scheduler
 
 ```powershell
 cd C:\Users\hp\Auto-Scheduler-n8n-CapstoneProject-G4
@@ -191,7 +313,9 @@ cd C:\Users\hp\Auto-Scheduler-n8n-CapstoneProject-G4
 python -m algorithm.api
 ```
 
-### Terminal 2 — Health check
+Leave this terminal running.
+
+### Terminal 3 — Health check
 
 ```powershell
 cd C:\Users\hp\Auto-Scheduler-n8n-CapstoneProject-G4
@@ -199,7 +323,7 @@ cd C:\Users\hp\Auto-Scheduler-n8n-CapstoneProject-G4
 Invoke-RestMethod http://localhost:8000/health
 ```
 
-### Terminal 3 — Streamlit
+### Terminal 4 — Streamlit
 
 ```powershell
 cd C:\Users\hp\Auto-Scheduler-n8n-CapstoneProject-G4
@@ -207,6 +331,113 @@ cd C:\Users\hp\Auto-Scheduler-n8n-CapstoneProject-G4
 streamlit run frontend/app.py
 ```
 
-## Current integration checkpoint
+Then use n8n for workflow/integration tests.
 
-At the point this guide was created, the n8n Webhook had already been successfully tested with a POST JSON payload. The remaining integration checkpoint was ensuring the Python scheduler API is running on port `8000` so the n8n `Python scheduler` node can reach `POST /schedule`.
+## 12. Troubleshooting
+
+### `ModuleNotFoundError: No module named 'algorithm'`
+
+Use:
+
+```powershell
+python -m algorithm.api
+```
+
+not:
+
+```powershell
+python algorithm\api.py
+```
+
+Also make sure PowerShell is currently in the repository root.
+
+### `The 'from' keyword is not supported in this version of the language`
+
+You pasted Python code directly into PowerShell. For example, this is Python code:
+
+```python
+from algorithm.run import run_scheduler
+```
+
+Start the API with:
+
+```powershell
+python -m algorithm.api
+```
+
+### `Could not connect to Postgres` / port `5432` connection refused
+
+Start Docker Desktop and the Compose services:
+
+```powershell
+docker compose up -d
+docker compose ps
+```
+
+Then retry:
+
+```powershell
+Invoke-RestMethod http://localhost:8000/health
+```
+
+### n8n reports `ECONNREFUSED` or cannot connect to port `8000`
+
+Make sure the Python API is still running:
+
+```powershell
+python -m algorithm.api
+```
+
+Then verify from the Windows host:
+
+```powershell
+Invoke-RestMethod http://localhost:8000/health
+```
+
+Do not close the API terminal while n8n is testing the workflow.
+
+### Docker Compose cannot start
+
+Check Docker Desktop first:
+
+```powershell
+docker --version
+docker compose version
+docker compose ps
+```
+
+Then inspect available Compose services:
+
+```powershell
+docker compose config --services
+```
+
+For a service that fails to start, inspect logs:
+
+```powershell
+docker compose logs <service-name>
+```
+
+## 13. Current integration checkpoint
+
+The n8n Webhook has already been successfully tested with a POST JSON payload. The Python scheduler API is implemented in `algorithm/api.py` and exposes `/health` and `/schedule`.
+
+The correct startup sequence is:
+
+```text
+Docker Desktop
+      ↓
+docker compose up -d
+      ↓
+PostgreSQL + n8n
+      ↓
+python -m algorithm.api
+      ↓
+GET /health
+      ↓
+Streamlit
+      ↓
+n8n Webhook → Python Scheduler → Contract Validation
+```
+
+Keep this guide with the repository so contributors do not need to search the codebase to discover how to start the scheduler.
