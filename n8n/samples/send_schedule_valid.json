@@ -1,0 +1,27 @@
+{
+  "recipient": "student@example.com",
+  "subject": "Your Course Timetable",
+  "schedule": [
+    {
+      "course": "CSC101",
+      "title": "Computer Science",
+      "day": "Monday",
+      "time": "09:00 - 11:00",
+      "room": "CR101"
+    },
+    {
+      "course": "CSC201",
+      "title": "Database Systems",
+      "day": "Tuesday",
+      "time": "11:00 - 13:00",
+      "room": "CR202"
+    },
+    {
+      "course": "MTH101",
+      "title": "Elementary Mathematics",
+      "day": "Monday",
+      "time": "12:00 - 14:00",
+      "room": "LT1"
+    }
+  ]
+}

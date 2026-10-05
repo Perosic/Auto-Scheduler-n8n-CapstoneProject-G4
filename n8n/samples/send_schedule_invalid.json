@@ -1,0 +1,12 @@
+{
+  "recipient": "not-an-email",
+  "subject": "Your Course Timetable",
+  "schedule": [
+    {
+      "course": "CSC101",
+      "title": "Computer Science",
+      "day": "Monday",
+      "time": "09:00 - 11:00"
+    }
+  ]
+}
