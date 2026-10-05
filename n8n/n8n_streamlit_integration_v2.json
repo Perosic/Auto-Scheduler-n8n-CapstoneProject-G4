@@ -1,5 +1,5 @@
 {
-  "name": "Auto-Scheduler-n8n-streamlit integration - fixed routing",
+  "name": "Auto-Scheduler Streamlit Integration v2 (conflict routing fix)",
   "nodes": [
     {
       "parameters": {},
@@ -25,10 +25,10 @@
             {
               "id": "3fe7cd32-3296-4ba5-8e1b-30466d1d7ce7",
               "leftValue": "={{ $json.status }}",
-              "rightValue": "CONFLICT",
+              "rightValue": "SUCCESS",
               "operator": {
                 "type": "string",
-                "operation": "equals"
+                "operation": "notEquals"
               }
             }
           ],
@@ -162,7 +162,8 @@
         "httpMethod": "POST",
         "path": "08190fdc-b0cf-4c0f-a7c0-b6c60e7595e2",
         "options": {},
-        "responseMode": "lastNode"
+        "responseMode": "lastNode",
+        "responseData": "firstEntryJson"
       },
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2.1,
