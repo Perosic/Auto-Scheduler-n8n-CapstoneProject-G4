@@ -57,6 +57,11 @@ If you want to pull the Compose images before starting them:
 
 ```powershell
 docker compose pull
+```
+
+Then:
+
+```powershell
 docker compose up -d
 ```
 
@@ -68,6 +73,8 @@ Check that the containers are running:
 docker compose ps
 ```
 
+If a service is still starting, wait a few seconds and run `docker compose ps` again.
+
 To see the services defined by the Compose file:
 
 ```powershell
@@ -76,7 +83,7 @@ docker compose config --services
 
 ## 4. Confirm PostgreSQL is running
 
-The Python scheduler loads scheduling data from PostgreSQL. If PostgreSQL is not running, the scheduler's `/health` endpoint can report a database connection error such as:
+The Python scheduler loads scheduling data from PostgreSQL. If PostgreSQL is not running, the scheduler's `/health` endpoint will report a database connection error such as:
 
 ```text
 Could not connect to Postgres

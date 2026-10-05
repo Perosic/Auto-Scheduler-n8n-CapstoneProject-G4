@@ -1,0 +1,254 @@
+{
+  "name": "Auto-Scheduler-n8n-orchestrator",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -384,
+        16
+      ],
+      "id": "b4ad63c9-1d24-4acd-9e3c-103cb4fd13b4",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "3fe7cd32-3296-4ba5-8e1b-30466d1d7ce7",
+              "leftValue": "={{ $json.unplaced.length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        224,
+        0
+      ],
+      "id": "ef1126f3-8904-4743-b285-d494541b1531",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\n\nconst unplaced = Array.isArray(data.unplaced)\n  ? data.unplaced\n  : [];\n\nconst conflicts = unplaced.map(item => {\n  const detail =\n    item.detail ||\n    item.reason ||\n    \"No additional details available\";\n\n  const detailLower = detail.toLowerCase();\n\n  let reasonCode = item.reason_code || \"UNKNOWN\";\n\n  // Normalize scheduler reason codes for downstream analysis.\n  if (detailLower.includes(\"no legal timeslot\")) {\n    reasonCode = \"NO_LEGAL_TIMESLOT\";\n  } else if (\n    detailLower.includes(\"rooms exist\") &&\n    detailLower.includes(\"occupied\")\n  ) {\n    reasonCode = \"ROOM_OCCUPIED\";\n  } else if (\n    detailLower.includes(\"capacity\")\n  ) {\n    reasonCode = \"ROOM_CAPACITY\";\n  }\n\n  return {\n    course_id: item.course_id,\n    course: item.code || item.course || null,\n    title: item.title || null,\n    reason_code: reasonCode,\n    detail\n  };\n});\n\nreturn [\n  {\n    json: {\n      status: \"CONFLICT\",\n      success: false,\n      violations_count: conflicts.length,\n      conflicts,\n      message: `${conflicts.length} course(s) could not be scheduled.`,\n      ai_ready: true\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        416,
+        -64
+      ],
+      "id": "5e177220-79fc-4feb-8475-23129ec089f3",
+      "name": "conflict  handler "
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\n\nreturn [\n  {\n    json: {\n      status: \"CONFLICT\",\n      success: false,\n      conflicts_analyzed: true,\n      message: \"Scheduling completed with unresolved conflicts.\",\n      resolution_report: data.output ?? \"No AI report generated.\"\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1024,
+        -192
+      ],
+      "id": "b8f082e0-f0d3-4ff6-83c7-296b37bef0f3",
+      "name": "Conflict Success "
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\n\nconst placed = Array.isArray(data.placed) ? data.placed : [];\n\nfunction escapeHtml(value) {\n  return String(value ?? \"\")\n    .replace(/&/g, \"&amp;\")\n    .replace(/</g, \"&lt;\")\n    .replace(/>/g, \"&gt;\")\n    .replace(/\"/g, \"&quot;\")\n    .replace(/'/g, \"&#039;\");\n}\n\nconst rows = placed.map((item) => {\n  const course =\n    item.course ??\n    item.course_code ??\n    item.code ??\n    item.name ??\n    \"\";\n\n  const title = item.title ?? \"\";\n\n  const lecturer =\n    item.lecturer ??\n    item.instructor ??\n    item.professor ??\n    \"\";\n\n  const room =\n    item.room ??\n    item.room_code ??\n    \"\";\n\n  const day =\n    item.day ??\n    item.day_of_week ??\n    \"\";\n\n  const time =\n    item.time ??\n    item.timeslot ??\n    item.time_slot ??\n    \"\";\n\n  return `\n    <tr>\n      <td>${escapeHtml(course)}</td>\n      <td>${escapeHtml(title)}</td>\n      <td>${escapeHtml(lecturer)}</td>\n      <td>${escapeHtml(room)}</td>\n      <td>${escapeHtml(day)}</td>\n      <td>${escapeHtml(time)}</td>\n    </tr>\n  `;\n}).join(\"\");\n\nconst html = `\n<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"UTF-8\">\n\n  <meta name=\"viewport\"\n        content=\"width=device-width, initial-scale=1.0\">\n\n  <title>University Timetable</title>\n\n  <style>\n    body {\n      font-family: Arial, Helvetica, sans-serif;\n      margin: 0;\n      padding: 30px;\n      background: #f5f7fa;\n      color: #222;\n    }\n\n    .container {\n      max-width: 1400px;\n      margin: 0 auto;\n      background: white;\n      padding: 30px;\n      border-radius: 10px;\n      box-shadow: 0 2px 10px rgba(0,0,0,0.08);\n    }\n\n    h1 {\n      margin: 0 0 8px 0;\n    }\n\n    .subtitle {\n      color: #666;\n      margin-bottom: 25px;\n    }\n\n    .summary {\n      display: flex;\n      gap: 20px;\n      margin-bottom: 25px;\n    }\n\n    .summary-card {\n      padding: 15px 20px;\n      border: 1px solid #ddd;\n      border-radius: 8px;\n      background: #fafafa;\n    }\n\n    .summary-card strong {\n      display: block;\n      font-size: 22px;\n      margin-top: 5px;\n    }\n\n    .table-wrapper {\n      overflow-x: auto;\n    }\n\n    table {\n      border-collapse: collapse;\n      width: 100%;\n      min-width: 900px;\n    }\n\n    th,\n    td {\n      border: 1px solid #ddd;\n      padding: 12px;\n      text-align: left;\n    }\n\n    th {\n      background: #f0f2f5;\n      font-weight: bold;\n    }\n\n    tr:nth-child(even) {\n      background: #fafafa;\n    }\n\n    tr:hover {\n      background: #f1f5f9;\n    }\n\n    .empty {\n      text-align: center;\n      padding: 30px;\n      color: #777;\n    }\n\n    .footer {\n      margin-top: 25px;\n      font-size: 13px;\n      color: #777;\n    }\n  </style>\n</head>\n\n<body>\n\n  <div class=\"container\">\n\n    <h1>University Timetable</h1>\n\n    <div class=\"subtitle\">\n      Automatically generated by the Auto-Scheduler\n    </div>\n\n    <div class=\"summary\">\n\n      <div class=\"summary-card\">\n        Scheduled Courses\n        <strong>${placed.length}</strong>\n      </div>\n\n      <div class=\"summary-card\">\n        Unplaced Courses\n        <strong>${\n          Array.isArray(data.unplaced)\n            ? data.unplaced.length\n            : 0\n        }</strong>\n      </div>\n\n      <div class=\"summary-card\">\n        Verification Errors\n        <strong>${data.violations_count ?? 0}</strong>\n      </div>\n\n    </div>\n\n    <div class=\"table-wrapper\">\n\n      <table>\n\n        <thead>\n          <tr>\n            <th>Course</th>\n            <th>Title</th>\n            <th>Lecturer</th>\n            <th>Room</th>\n            <th>Day</th>\n            <th>Time</th>\n          </tr>\n        </thead>\n\n        <tbody>\n\n          ${\n            rows ||\n            `\n            <tr>\n              <td colspan=\"6\" class=\"empty\">\n                No scheduled courses found.\n              </td>\n            </tr>\n            `\n          }\n\n        </tbody>\n\n      </table>\n\n    </div>\n\n    <div class=\"footer\">\n      Generated by the Auto-Scheduler n8n workflow.\n    </div>\n\n  </div>\n\n</body>\n</html>\n`;\n\nreturn [\n  {\n    json: {\n      ...data,\n      status: \"SUCCESS\",\n      success: true,\n      placed_count: placed.length,\n      unplaced_count: Array.isArray(data.unplaced)\n        ? data.unplaced.length\n        : 0,\n      message: \"Timetable generated successfully.\",\n      html\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        448,
+        80
+      ],
+      "id": "f8ecb20f-b64d-4129-beaf-7fc5e082b79b",
+      "name": "Timetable HTML generator "
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $json;\n\nconst errors = [];\n\nif (!Array.isArray(data.placed)) {\n  errors.push(\"placed must be an array\");\n}\n\nif (!Array.isArray(data.unplaced)) {\n  errors.push(\"unplaced must be an array\");\n}\n\nif (typeof data.violations_count !== \"number\") {\n  errors.push(\"violations_count must be a number\");\n}\n\nreturn [\n  {\n    json: {\n      ...data,\n      contract_valid: errors.length === 0,\n      contract_errors: errors\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        64,
+        16
+      ],
+      "id": "c0b1e923-e499-4cc3-9031-4cd26d3f4fb4",
+      "name": "Contract Validation "
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8000/schedule",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        -176,
+        16
+      ],
+      "id": "248466e5-81a2-4b51-b25a-23c9b1a94d11",
+      "name": "Python scheduler "
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Analyze the following scheduling conflicts produced by the authoritative Python scheduling engine.\n\nConflicts:\n{{ JSON.stringify($json.conflicts, null, 2) }}\n\nFor each conflict:\n\n1. Identify the affected course.\n2. State the reported reason and detail exactly as provided.\n3. Explain only what can be concluded from the provided conflict data.\n4. Identify what information or constraint should be reviewed.\n5. If the provided data does not identify the exact cause, explicitly state that more information is required.\n\nImportant rules:\n- Do not invent or assume rooms, instructors, capacities, equipment, student enrollment overlaps, timeslots, or other constraints.\n- Do not infer relationships between courses unless they are explicitly present in the input.\n- Do not assume that a particular constraint caused the conflict unless the input explicitly identifies it.\n- Do not claim that any conflict has been resolved.\n- The Python scheduling engine is authoritative.\n\nProvide a concise conflict-resolution report.",
+        "options": {
+          "systemMessage": "You are a conflict-resolution assistant for a university timetable scheduling system.\n\nThe Python scheduling engine is the authoritative scheduling engine.\n\nYour job is to analyze scheduling conflicts and provide a clear resolution report.\n\nDo not invent timetable assignments, rooms, timeslots, or constraints.\n\nDo not claim that a conflict has been resolved.\n\nFor each conflict:\n- Identify the affected course.\n- State the reported reason.\n- Explain the constraint that appears to be causing the problem.\n- Suggest what should be reviewed to resolve it.\n\nIf the available information is insufficient, clearly state that more information is required."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        640,
+        -272
+      ],
+      "id": "76305529-c953-47a3-ba2a-4e4a184012c5",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-3.5-flash-lite",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        640,
+        -80
+      ],
+      "id": "49bdd585-7343-46c3-b923-d1067719b35d",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "LulWOvjgaQohvta9",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Python scheduler ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "conflict  handler ",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Timetable HTML generator ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "conflict  handler ": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Contract Validation ": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Python scheduler ": {
+      "main": [
+        [
+          {
+            "node": "Contract Validation ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Conflict Success ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": true
+  },
+  "versionId": "d4dedfd3-c755-4ccd-a0b5-bb2afecb5aa0",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "6a839ff543ab1607d5f001b5c10da8f76df1155528ea05679636716c5edaee60"
+  },
+  "nodeGroups": [],
+  "id": "7POYlXNvgHjBANPr",
+  "tags": []
+}
