@@ -1,16 +1,33 @@
-def _build_allowed_timeslot_map(allowed_timeslots, all_timeslot_ids):
+"""
+dsatur.py
+
+DSATUR-based course timeslot scheduler.
+
+A course can be assigned to a timeslot when:
+
+1. The timeslot is allowed for that course.
+2. None of its conflicting courses already use that timeslot.
+
+Courses with no explicit allowed-timeslot rows may use any
+available timeslot.
+
+The scheduler does NOT assign rooms. Room assignment is handled
+separately by room_assigner.py.
+"""
+
+
+def _build_allowed_timeslot_map(
+    allowed_timeslots,
+    all_timeslot_ids,
+):
     """
-    Build a lookup of explicitly allowed timeslots for each course.
+    Build:
 
-    Example:
-        {
-            24: {1},
-            25: {1},
-            26: {1, 2}
-        }
+        course_id -> set(timeslot_id)
 
-    If a course has no entry in allowed_timeslots,
-    it can use any available timeslot.
+    for courses that have explicit restrictions.
+
+    Courses absent from this map are unrestricted.
     """
 
     allowed_map = {}
@@ -19,214 +36,359 @@ def _build_allowed_timeslot_map(allowed_timeslots, all_timeslot_ids):
         course_id = row["course_id"]
         timeslot_id = row["timeslot_id"]
 
-        allowed_map.setdefault(course_id, set()).add(timeslot_id)
+        allowed_map.setdefault(
+            course_id,
+            set()
+        ).add(timeslot_id)
 
     all_slots = set(all_timeslot_ids)
 
     return allowed_map, all_slots
 
 
-def dsatur_schedule(graph, courses, timeslots, allowed_timeslots):
+def dsatur_schedule(
+    graph,
+    courses,
+    timeslots,
+    allowed_timeslots,
+):
     """
-    Schedule courses using the DSATUR algorithm.
+    Schedule courses using DSATUR.
 
-    Rules:
-    1. Conflicting courses cannot share a timeslot.
-    2. Explicit allowed-timeslot restrictions must be respected.
-    3. Courses without restrictions may use any timeslot.
-    4. If no legal timeslot exists, the course is UNPLACED.
+    Returns:
+
+        {
+            "schedule": [...],
+            "unplaced": [...]
+        }
     """
 
-    # ---------------------------------------------------------
-    # 1. Get all available timeslot IDs
-    # ---------------------------------------------------------
+    # =========================================================
+    # 1. Validate timeslots
+    # =========================================================
 
     all_timeslot_ids = [
         timeslot["timeslot_id"]
         for timeslot in timeslots
     ]
 
-    # ---------------------------------------------------------
-    # 2. Build allowed-timeslot lookup
-    # ---------------------------------------------------------
+    if not all_timeslot_ids:
+        raise ValueError(
+            "No timeslots are available."
+        )
 
-    explicit_allowed, all_slots = _build_allowed_timeslot_map(
-        allowed_timeslots,
-        all_timeslot_ids
+    # =========================================================
+    # 2. Allowed timeslots
+    # =========================================================
+
+    explicit_allowed, all_slots = (
+        _build_allowed_timeslot_map(
+            allowed_timeslots,
+            all_timeslot_ids,
+        )
     )
 
-    # ---------------------------------------------------------
+    # =========================================================
     # 3. Course lookup
-    # ---------------------------------------------------------
+    # =========================================================
 
     course_lookup = {
         course["course_id"]: course
         for course in courses
     }
 
-    # ---------------------------------------------------------
-    # 4. Store assigned courses separately
+    # =========================================================
+    # 4. Ensure every course exists in graph
     #
-    # IMPORTANT:
-    # An unplaced course is NOT considered to have a color.
-    # ---------------------------------------------------------
+    # This is important.
+    #
+    # If a course has no conflicts, it must still be
+    # scheduled.
+    # =========================================================
+
+    complete_graph = {
+        course_id: set(graph.get(course_id, set()))
+        for course_id in course_lookup
+    }
+
+    # =========================================================
+    # 5. Validate graph
+    # =========================================================
+
+    for course_id, neighbors in complete_graph.items():
+
+        for neighbor in neighbors:
+
+            if neighbor not in course_lookup:
+                raise ValueError(
+                    "Conflict graph contains unknown "
+                    f"neighbor course_id: {neighbor}"
+                )
+
+    # =========================================================
+    # 6. Storage
+    # =========================================================
 
     assigned = {}
 
     unplaced_ids = set()
 
-    # Courses still needing processing
-    remaining = set(graph.keys())
+    remaining = set(
+        course_lookup.keys()
+    )
 
-    # ---------------------------------------------------------
-    # 5. Helper: get allowed timeslots for a course
-    # ---------------------------------------------------------
+    # =========================================================
+    # 7. Helper functions
+    # =========================================================
 
     def get_allowed_slots(course_id):
 
         if course_id in explicit_allowed:
-            return explicit_allowed[course_id]
-
-        return all_slots
-
-    # ---------------------------------------------------------
-    # 6. DSATUR loop
-    # ---------------------------------------------------------
-
-    while remaining:
-
-        # -----------------------------------------------------
-        # Calculate DSATUR priority.
-        #
-        # Saturation =
-        # number of DIFFERENT timeslots used by already
-        # assigned neighboring courses.
-        #
-        # Degree =
-        # number of conflicts this course has.
-        # -----------------------------------------------------
-
-        def priority(course_id):
-
-            neighbor_timeslots = {
-                assigned[neighbor]
-                for neighbor in graph[course_id]
-                if neighbor in assigned
-            }
-
-            saturation = len(neighbor_timeslots)
-            degree = len(graph[course_id])
-
-            return saturation, degree
-
-        # -----------------------------------------------------
-        # Choose the next course.
-        # Highest saturation first.
-        # Degree breaks ties.
-        # Course ID gives deterministic final tie-break.
-        # -----------------------------------------------------
-
-        selected_course = max(
-            remaining,
-            key=lambda course_id: (
-                priority(course_id)[0],
-                priority(course_id)[1],
-                -course_id
+            return set(
+                explicit_allowed[course_id]
             )
-        )
 
-        # -----------------------------------------------------
-        # Find timeslots already used by its assigned neighbors
-        # -----------------------------------------------------
+        return set(all_slots)
 
-        neighbor_timeslots = {
+    def get_conflicting_slots(course_id):
+
+        return {
             assigned[neighbor]
-            for neighbor in graph[selected_course]
+            for neighbor in complete_graph[course_id]
             if neighbor in assigned
         }
 
-        # -----------------------------------------------------
-        # Find legal timeslots
-        # -----------------------------------------------------
+    def get_candidates(course_id):
 
-        candidates = (
-            get_allowed_slots(selected_course)
-            - neighbor_timeslots
+        allowed = get_allowed_slots(
+            course_id
         )
 
-        # -----------------------------------------------------
-        # Assign a timeslot if possible
-        # -----------------------------------------------------
+        conflicting = get_conflicting_slots(
+            course_id
+        )
+
+        return allowed - conflicting
+
+    # =========================================================
+    # 8. DSATUR loop
+    # =========================================================
+
+    while remaining:
+
+        def priority(course_id):
+
+            # Timeslots already used by neighbours.
+            neighbor_timeslots = {
+                assigned[neighbor]
+                for neighbor in complete_graph[course_id]
+                if neighbor in assigned
+            }
+
+            saturation = len(
+                neighbor_timeslots
+            )
+
+            degree = len(
+                complete_graph[course_id]
+            )
+
+            legal_slots = len(
+                get_candidates(course_id)
+            )
+
+            # Priority:
+            #
+            # 1. highest saturation
+            # 2. highest degree
+            # 3. fewest legal slots
+            # 4. lowest course ID
+            #
+            # The final negative course_id gives
+            # deterministic behaviour.
+
+            return (
+                saturation,
+                degree,
+                -legal_slots,
+                -course_id,
+            )
+
+        selected_course = max(
+            remaining,
+            key=priority,
+        )
+
+        candidates = get_candidates(
+            selected_course
+        )
+
+        # =====================================================
+        # 9. Assign
+        # =====================================================
 
         if candidates:
 
-            selected_timeslot = min(candidates)
+            # Deterministic:
+            # choose the earliest available timeslot.
+            selected_timeslot = min(
+                candidates
+            )
 
-            assigned[selected_course] = selected_timeslot
+            assigned[
+                selected_course
+            ] = selected_timeslot
 
         else:
 
-            # No legal timeslot exists.
-            #
-            # IMPORTANT:
-            # We do NOT put this course into "assigned".
-            # It therefore does not affect the saturation
-            # calculation for other courses.
+            unplaced_ids.add(
+                selected_course
+            )
 
-            unplaced_ids.add(selected_course)
+        remaining.remove(
+            selected_course
+        )
 
-        remaining.remove(selected_course)
-
-    # ---------------------------------------------------------
-    # 7. Build final schedule
-    # ---------------------------------------------------------
+    # =========================================================
+    # 10. Timeslot lookup
+    # =========================================================
 
     timeslot_lookup = {
         timeslot["timeslot_id"]: timeslot
         for timeslot in timeslots
     }
 
+    # =========================================================
+    # 11. Build schedule
+    # =========================================================
+
     schedule = []
 
-    for course_id, timeslot_id in sorted(assigned.items()):
+    for course_id, timeslot_id in sorted(
+        assigned.items()
+    ):
 
-        course = course_lookup[course_id]
-        timeslot = timeslot_lookup[timeslot_id]
+        course = course_lookup[
+            course_id
+        ]
 
-        schedule.append({
-            "course_id": course_id,
-            "code": course["code"],
-            "title": course["title"],
-            "timeslot_id": timeslot_id,
-            "timeslot_label": timeslot["label"],
-            "day_of_week": timeslot["day_of_week"],
-            "start_time": timeslot["start_time"],
-            "end_time": timeslot["end_time"]
-        })
+        timeslot = timeslot_lookup[
+            timeslot_id
+        ]
 
-    # ---------------------------------------------------------
-    # 8. Build unplaced list
-    # ---------------------------------------------------------
+        schedule.append(
+            {
+                "course_id": course_id,
+                "code": course["code"],
+                "title": course["title"],
+                "timeslot_id": timeslot_id,
+                "timeslot_label": timeslot["label"],
+                "day_of_week": timeslot["day_of_week"],
+                "start_time": timeslot["start_time"],
+                "end_time": timeslot["end_time"],
+            }
+        )
+
+    # =========================================================
+    # 12. Build unplaced
+    # =========================================================
 
     unplaced = []
 
-    for course_id in sorted(unplaced_ids):
+    for course_id in sorted(
+        unplaced_ids
+    ):
 
-        course = course_lookup[course_id]
+        course = course_lookup[
+            course_id
+        ]
 
-        unplaced.append({
-    "course_id": course_id,
-    "code": course["code"],
-    "title": course["title"],
-    "reason_code": "OTHER",
-    "detail": "No legal timeslot available"
-})
+        unplaced.append(
+            {
+                "course_id": course_id,
+                "code": course["code"],
+                "title": course["title"],
+                "reason_code": "NO_LEGAL_TIMESLOT",
+                "detail": (
+                    "No legal timeslot available "
+                    "after applying conflict and "
+                    "allowed-timeslot constraints."
+                ),
+            }
+        )
 
-    # ---------------------------------------------------------
-    # 9. Return result
-    # ---------------------------------------------------------
+    # =========================================================
+    # 13. Return
+    # =========================================================
 
     return {
         "schedule": schedule,
-        "unplaced": unplaced
+        "unplaced": unplaced,
     }
+
+
+# =============================================================
+# Standalone test
+# =============================================================
+
+if __name__ == "__main__":
+
+    test_graph = {
+        1: {2},
+        2: {1, 3},
+        3: {2},
+    }
+
+    test_courses = [
+        {
+            "course_id": 1,
+            "code": "TEST101",
+            "title": "Test Course 1",
+        },
+        {
+            "course_id": 2,
+            "code": "TEST102",
+            "title": "Test Course 2",
+        },
+        {
+            "course_id": 3,
+            "code": "TEST103",
+            "title": "Test Course 3",
+        },
+    ]
+
+    test_timeslots = [
+        {
+            "timeslot_id": 1,
+            "label": "Mon-09:00",
+            "day_of_week": "Mon",
+            "start_time": "09:00:00",
+            "end_time": "10:00:00",
+        },
+        {
+            "timeslot_id": 2,
+            "label": "Mon-10:00",
+            "day_of_week": "Mon",
+            "start_time": "10:00:00",
+            "end_time": "11:00:00",
+        },
+    ]
+
+    test_allowed_timeslots = []
+
+    result = dsatur_schedule(
+        test_graph,
+        test_courses,
+        test_timeslots,
+        test_allowed_timeslots,
+    )
+
+    print("\nSchedule:")
+
+    for item in result["schedule"]:
+        print(item)
+
+    print("\nUnplaced:")
+
+    for item in result["unplaced"]:
+        print(item)

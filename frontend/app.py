@@ -1,29 +1,21 @@
 """
-P1 Streamlit Scheduler Dashboard
+University Course Timetable Auto-Scheduler
+Streamlit frontend -> n8n production webhook -> Python scheduler
 
-Features:
-- CSV upload
-- Flexible column mapping
-- CSV validation
-- Course selection
-- Enrollment overrides
-- Scheduler integration
-- Friendly scheduler errors
-- Timetable display
-- Unplaced/conflict display
-- Verification results
-- CSV export
+Run:
+    streamlit run frontend/app.py
 """
 
 import sys
 from pathlib import Path
 
 import pandas as pd
+import requests
 import streamlit as st
 
 
 # ============================================================
-# PROJECT IMPORT PATH
+# PROJECT PATH
 # ============================================================
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -32,11 +24,20 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 
-from algorithm.frontend_scheduler import run_scheduler_for_courses
+# ============================================================
+# N8N PRODUCTION WEBHOOK
+# ============================================================
+
+N8N_WEBHOOK_URL = (
+    "http://localhost:5678/webhook/"
+    "08190fdc-b0cf-4c0f-a7c0-b6c60e7595e2"
+)
+
+N8N_TIMEOUT_SECONDS = 180
 
 
 # ============================================================
-# PAGE CONFIGURATION
+# PAGE CONFIG
 # ============================================================
 
 st.set_page_config(
@@ -53,9 +54,24 @@ st.set_page_config(
 st.title("📅 University Course Scheduler")
 
 st.caption(
-    "P1 Streamlit Scheduler — upload courses, select courses, "
-    "generate a timetable, verify conflicts, and export results."
+    "Upload courses, select courses, generate a timetable "
+    "through the n8n orchestration workflow, verify conflicts, "
+    "and export the result."
 )
+
+
+# ============================================================
+# SESSION STATE
+# ============================================================
+
+if "schedule_result" not in st.session_state:
+    st.session_state.schedule_result = None
+
+if "selected_courses" not in st.session_state:
+    st.session_state.selected_courses = []
+
+if "enrollment_overrides" not in st.session_state:
+    st.session_state.enrollment_overrides = {}
 
 
 # ============================================================
@@ -98,12 +114,20 @@ COLUMN_ALIASES = {
 }
 
 
+REQUIRED_FIELDS = {
+    "course_id",
+    "course_code",
+    "course_name",
+    "instructor",
+    "students",
+}
+
+
 # ============================================================
 # HELPERS
 # ============================================================
 
 def normalize_column_name(column):
-    """Normalize a CSV column name for matching."""
     return (
         str(column)
         .strip()
@@ -113,9 +137,11 @@ def normalize_column_name(column):
     )
 
 
-def detect_columns(columns):
-    """Detect internal fields from flexible CSV column names."""
+def clean_course_code(value):
+    return str(value).strip().upper()
 
+
+def detect_columns(columns):
     normalized = {
         normalize_column_name(column): column
         for column in columns
@@ -130,30 +156,125 @@ def detect_columns(columns):
             normalized_alias = normalize_column_name(alias)
 
             if normalized_alias in normalized:
-
                 mapping[internal_name] = normalized[
                     normalized_alias
                 ]
-
                 break
 
     return mapping
 
 
-def clean_course_code(value):
-    """Normalize course codes."""
-    return str(value).strip().upper()
+def validate_and_normalize(courses, mapping):
+
+    missing_fields = (
+        REQUIRED_FIELDS
+        - set(mapping.keys())
+    )
+
+    if missing_fields:
+        return None, [
+            "Missing required fields: "
+            + ", ".join(sorted(missing_fields))
+        ]
+
+    normalized = pd.DataFrame()
+
+    for internal_name in REQUIRED_FIELDS:
+
+        source_column = mapping[internal_name]
+
+        normalized[internal_name] = courses[
+            source_column
+        ]
+
+    normalized["course_code"] = (
+        normalized["course_code"]
+        .astype(str)
+        .str.strip()
+        .str.upper()
+    )
+
+    normalized["course_name"] = (
+        normalized["course_name"]
+        .astype(str)
+        .str.strip()
+    )
+
+    normalized["instructor"] = (
+        normalized["instructor"]
+        .astype(str)
+        .str.strip()
+    )
+
+    normalized["students"] = pd.to_numeric(
+        normalized["students"],
+        errors="coerce",
+    )
+
+    errors = []
+
+    if normalized["course_code"].isna().any():
+        errors.append(
+            "One or more courses have an empty course code."
+        )
+
+    if normalized["course_name"].isna().any():
+        errors.append(
+            "One or more courses have an empty course name."
+        )
+
+    if normalized["instructor"].isna().any():
+        errors.append(
+            "One or more courses have an empty instructor."
+        )
+
+    if normalized["students"].isna().any():
+        errors.append(
+            "One or more courses have an invalid student count."
+        )
+
+    if (normalized["students"] < 0).any():
+        errors.append(
+            "Student counts cannot be negative."
+        )
+
+    if normalized["course_code"].duplicated().any():
+        errors.append(
+            "Duplicate course codes were found."
+        )
+
+    return normalized, errors
 
 
-# ============================================================
-# SESSION STATE
-# ============================================================
+def call_n8n_webhook(
+    selected_courses,
+    enrollment_overrides,
+):
+    """
+    Send the scheduling request to the n8n production webhook.
+    """
 
-if "normalized_courses" not in st.session_state:
-    st.session_state.normalized_courses = None
+    payload = {
+        "course_codes": selected_courses,
+        "enrollment_overrides": enrollment_overrides,
+    }
 
-if "schedule_result" not in st.session_state:
-    st.session_state.schedule_result = None
+    response = requests.post(
+        N8N_WEBHOOK_URL,
+        json=payload,
+        timeout=N8N_TIMEOUT_SECONDS,
+    )
+
+    response.raise_for_status()
+
+    try:
+        return response.json()
+
+    except ValueError:
+        return {
+            "success": True,
+            "raw_response": response.text,
+        }
 
 
 # ============================================================
@@ -166,7 +287,6 @@ uploaded_file = st.file_uploader(
     "Choose a course CSV file",
     type=["csv"],
 )
-
 
 if uploaded_file is None:
 
@@ -187,16 +307,18 @@ try:
 
 except Exception as exc:
 
-    st.error("❌ Unable to read the CSV file.")
+    st.error(
+        "❌ Unable to read the CSV file."
+    )
 
-    st.warning(str(exc))
+    st.exception(exc)
 
     st.stop()
 
 
 st.success(
-    f"CSV uploaded successfully: "
-    f"{len(courses)} row(s) found."
+    f"CSV uploaded successfully — "
+    f"{len(courses)} row(s)."
 )
 
 
@@ -204,41 +326,38 @@ st.success(
 # CSV PREVIEW
 # ============================================================
 
-st.subheader("CSV Preview")
+with st.expander(
+    "CSV Preview",
+    expanded=True,
+):
 
-st.dataframe(
-    courses.head(20),
-    use_container_width=True,
-    hide_index=True,
-)
+    st.dataframe(
+        courses.head(20),
+        use_container_width=True,
+        hide_index=True,
+    )
 
 
 # ============================================================
 # STEP 2 — COLUMN DETECTION
 # ============================================================
 
-st.header("2. Detect CSV Columns")
+st.header("2. Column Mapping")
 
 column_mapping = detect_columns(
     courses.columns
 )
 
-
 mapping_rows = []
 
 for internal_name in COLUMN_ALIASES:
 
-    source_column = column_mapping.get(
-        internal_name
-    )
-
     mapping_rows.append(
         {
             "Required Field": internal_name,
-            "CSV Column": (
-                source_column
-                if source_column
-                else "❌ Not found"
+            "CSV Column": column_mapping.get(
+                internal_name,
+                "❌ Not found",
             ),
         }
     )
@@ -247,7 +366,6 @@ for internal_name in COLUMN_ALIASES:
 mapping_df = pd.DataFrame(
     mapping_rows
 )
-
 
 st.dataframe(
     mapping_df,
@@ -262,152 +380,13 @@ st.dataframe(
 
 st.header("3. Validate Courses")
 
-
-required_fields = {
-    "course_id",
-    "course_code",
-    "course_name",
-    "instructor",
-    "students",
-}
-
-
-missing_fields = (
-    required_fields
-    - set(column_mapping.keys())
+normalized_courses, validation_errors = (
+    validate_and_normalize(
+        courses,
+        column_mapping,
+    )
 )
 
-
-if missing_fields:
-
-    st.error(
-        "❌ CSV validation failed."
-    )
-
-    st.warning(
-        "Missing required fields: "
-        + ", ".join(
-            sorted(missing_fields)
-        )
-    )
-
-    st.info(
-        "Rename your CSV columns using one of the "
-        "supported names shown above."
-    )
-
-    st.stop()
-
-
-# ============================================================
-# NORMALIZE DATA
-# ============================================================
-
-normalized_courses = pd.DataFrame()
-
-
-for internal_name in required_fields:
-
-    source_column = column_mapping[
-        internal_name
-    ]
-
-    normalized_courses[
-        internal_name
-    ] = courses[source_column]
-
-
-# Normalize course codes
-
-normalized_courses[
-    "course_code"
-] = normalized_courses[
-    "course_code"
-].apply(
-    clean_course_code
-)
-
-
-# ============================================================
-# VALUE VALIDATION
-# ============================================================
-
-validation_errors = []
-
-
-if normalized_courses[
-    "course_code"
-].isna().any():
-
-    validation_errors.append(
-        "One or more courses have an empty course code."
-    )
-
-
-if normalized_courses[
-    "course_name"
-].isna().any():
-
-    validation_errors.append(
-        "One or more courses have an empty course name."
-    )
-
-
-if normalized_courses[
-    "instructor"
-].isna().any():
-
-    validation_errors.append(
-        "One or more courses have an empty instructor."
-    )
-
-
-if normalized_courses[
-    "students"
-].isna().any():
-
-    validation_errors.append(
-        "One or more courses have an empty student count."
-    )
-
-
-# Convert students to numeric
-
-try:
-
-    normalized_courses[
-        "students"
-    ] = pd.to_numeric(
-        normalized_courses["students"]
-    )
-
-except Exception:
-
-    validation_errors.append(
-        "Student counts must be numeric."
-    )
-
-
-# Duplicate course codes
-
-duplicate_codes = (
-    normalized_courses[
-        "course_code"
-    ]
-    .duplicated()
-)
-
-
-if duplicate_codes.any():
-
-    validation_errors.append(
-        "Duplicate course codes were found."
-    )
-
-
-# ============================================================
-# SHOW VALIDATION ERRORS
-# ============================================================
 
 if validation_errors:
 
@@ -416,10 +395,12 @@ if validation_errors:
     )
 
     for error in validation_errors:
+        st.warning(error)
 
-        st.warning(
-            error
-        )
+    st.info(
+        "Rename your CSV columns using one of "
+        "the supported aliases shown above."
+    )
 
     st.stop()
 
@@ -429,22 +410,11 @@ st.success(
 )
 
 
-# Save normalized data
-
-st.session_state.normalized_courses = (
-    normalized_courses.copy()
-)
-
-
 # ============================================================
 # COURSE SUMMARY
 # ============================================================
 
-st.subheader("Course Summary")
-
-
-col1, col2, col3 = st.columns(3)
-
+col1, col2, col3, col4 = st.columns(4)
 
 with col1:
 
@@ -452,7 +422,6 @@ with col1:
         "Courses",
         len(normalized_courses),
     )
-
 
 with col2:
 
@@ -463,7 +432,6 @@ with col2:
         ].nunique(),
     )
 
-
 with col3:
 
     st.metric(
@@ -471,6 +439,17 @@ with col3:
         normalized_courses[
             "instructor"
         ].nunique(),
+    )
+
+with col4:
+
+    st.metric(
+        "Students",
+        int(
+            normalized_courses[
+                "students"
+            ].sum()
+        ),
     )
 
 
@@ -495,8 +474,12 @@ with st.expander(
 
 st.header("4. Select Courses")
 
+st.write(
+    "Choose the courses you want to include "
+    "in this timetable."
+)
 
-all_course_codes = (
+course_codes = (
     normalized_courses[
         "course_code"
     ]
@@ -504,35 +487,40 @@ all_course_codes = (
 )
 
 
+course_labels = {}
+
+for _, row in normalized_courses.iterrows():
+
+    course_labels[
+        row["course_code"]
+    ] = (
+        f'{row["course_code"]} — '
+        f'{row["course_name"]}'
+    )
+
+
 selected_courses = st.multiselect(
-    "Choose courses to include in the timetable",
-    options=all_course_codes,
-    default=all_course_codes,
+    "Courses to schedule",
+    options=course_codes,
+    default=course_codes,
+    format_func=lambda code: course_labels.get(
+        code,
+        code,
+    ),
 )
 
 
 if not selected_courses:
 
     st.warning(
-        "Please select at least one course."
+        "Select at least one course."
     )
 
     st.stop()
 
 
-# ============================================================
-# SELECTED COURSE DATA
-# ============================================================
-
-selected_df = normalized_courses[
-    normalized_courses[
-        "course_code"
-    ].isin(selected_courses)
-].copy()
-
-
-st.write(
-    f"Selected **{len(selected_df)}** course(s)."
+st.success(
+    f"{len(selected_courses)} course(s) selected."
 )
 
 
@@ -540,45 +528,50 @@ st.write(
 # STEP 5 — ENROLLMENT OVERRIDES
 # ============================================================
 
-st.header("5. Enrollment Overrides")
+st.header("5. Enrollment")
 
 st.caption(
-    "Optional: change the expected enrollment for individual courses "
-    "before generating the schedule."
+    "You can override the enrollment before scheduling."
 )
 
 
 enrollment_overrides = {}
 
 
-for _, row in selected_df.iterrows():
+for course_code in selected_courses:
 
-    code = row["course_code"]
+    row = normalized_courses[
+        normalized_courses[
+            "course_code"
+        ] == course_code
+    ].iloc[0]
 
     default_students = int(
         row["students"]
     )
 
-    override = st.number_input(
-        f"{code} — {row['course_name']}",
-        min_value=1,
+    enrollment_overrides[
+        course_code
+    ] = st.number_input(
+        f"{course_code} — {row['course_name']}",
+        min_value=0,
         value=default_students,
         step=1,
-        key=f"enrollment_{code}",
+        key=f"students_{course_code}",
     )
-
-    if override != default_students:
-
-        enrollment_overrides[
-            code
-        ] = override
 
 
 # ============================================================
-# STEP 6 — GENERATE SCHEDULE
+# STEP 6 — GENERATE THROUGH N8N
 # ============================================================
 
 st.header("6. Generate Schedule")
+
+st.write(
+    "The selected courses will be sent through "
+    "the n8n production workflow. n8n then calls "
+    "the authoritative Python scheduling engine."
+)
 
 
 generate = st.button(
@@ -593,50 +586,72 @@ if generate:
     st.session_state.schedule_result = None
 
     with st.spinner(
-        "Generating timetable and verifying constraints..."
+        "Sending scheduling request through n8n..."
     ):
 
         try:
 
-            result = run_scheduler_for_courses(
+            result = call_n8n_webhook(
                 selected_courses,
                 enrollment_overrides,
             )
 
             st.session_state.schedule_result = result
 
-        except ValueError as exc:
-
-            st.error(
-                "❌ Schedule generation failed"
+            st.session_state.selected_courses = (
+                selected_courses
             )
 
-            st.warning(
-                str(exc)
+            st.session_state.enrollment_overrides = (
+                enrollment_overrides
+            )
+
+        except requests.exceptions.Timeout:
+
+            st.error(
+                "❌ n8n timed out while generating the schedule."
             )
 
             st.info(
-                "Please remove invalid course codes from "
-                "the CSV or select only courses available "
-                "in the scheduling database."
+                "Check the n8n execution log and the "
+                "Python Scheduler node."
             )
 
-            st.stop()
+        except requests.exceptions.ConnectionError:
+
+            st.error(
+                "❌ Could not connect to n8n."
+            )
+
+            st.info(
+                "Make sure n8n is running at "
+                "http://localhost:5678."
+            )
+
+        except requests.exceptions.HTTPError as exc:
+
+            st.error(
+                "❌ n8n returned an HTTP error."
+            )
+
+            if exc.response is not None:
+
+                st.code(
+                    exc.response.text,
+                    language="json",
+                )
 
         except Exception as exc:
 
             st.error(
-                "❌ An unexpected error occurred "
-                "while generating the schedule."
+                "❌ Schedule generation failed."
             )
 
             st.exception(exc)
 
-            st.stop()
-
 
 # ============================================================
-# DISPLAY RESULT
+# RESULTS
 # ============================================================
 
 result = st.session_state.schedule_result
@@ -646,110 +661,110 @@ if result is None:
 
     st.info(
         "Select your courses and click "
-        "**Generate Schedule**."
+        "'Generate Schedule' to create a timetable."
     )
 
     st.stop()
 
 
 # ============================================================
-# RESULT SUMMARY
+# STEP 7 — STATUS
 # ============================================================
 
-st.header("7. Schedule Results")
+st.divider()
 
+st.header("7. Schedule Result")
 
-requested_count = len(
-    result.get(
-        "requested_courses",
-        []
-    )
-)
-
-placed = result.get(
-    "placed",
-    []
-)
-
-unplaced = result.get(
-    "unplaced",
-    []
-)
-
-verification_errors = result.get(
-    "verification_errors",
-    []
-)
-
-
-placed_count = len(
-    placed
-)
-
-unplaced_count = len(
-    unplaced
-)
-
-verification_count = len(
-    verification_errors
-)
-
-
-col1, col2, col3, col4 = st.columns(4)
-
-
-with col1:
-
-    st.metric(
-        "Requested",
-        requested_count,
-    )
-
-
-with col2:
-
-    st.metric(
-        "Placed",
-        placed_count,
-    )
-
-
-with col3:
-
-    st.metric(
-        "Unplaced",
-        unplaced_count,
-    )
-
-
-with col4:
-
-    st.metric(
-        "Verification Issues",
-        verification_count,
-    )
-
-
-# ============================================================
-# SUCCESS / CONFLICT STATUS
-# ============================================================
 
 if result.get("success"):
 
     st.success(
-        "✅ Schedule generated successfully. "
-        "All selected courses were placed and verification passed."
+        "✅ Schedule generated successfully."
     )
 
 else:
 
     st.warning(
-        "⚠️ Schedule generated with conflicts or unplaced courses."
+        "⚠️ Schedule generated with conflicts "
+        "or unplaced courses."
     )
 
 
 # ============================================================
-# TIMETABLE
+# METRICS
+# ============================================================
+
+placed = result.get(
+    "placed",
+    [],
+)
+
+unplaced = result.get(
+    "unplaced",
+    [],
+)
+
+verification_errors = result.get(
+    "verification_errors",
+    [],
+)
+
+missing_courses = result.get(
+    "missing_courses",
+    [],
+)
+
+
+requested_courses = result.get(
+    "requested_courses",
+    selected_courses,
+)
+
+
+col1, col2, col3, col4 = st.columns(4)
+
+with col1:
+
+    st.metric(
+        "Requested",
+        len(requested_courses),
+    )
+
+with col2:
+
+    st.metric(
+        "Placed",
+        len(placed),
+    )
+
+with col3:
+
+    st.metric(
+        "Unplaced",
+        len(unplaced),
+    )
+
+with col4:
+
+    st.metric(
+        "Verification Issues",
+        len(verification_errors),
+    )
+
+
+# ============================================================
+# N8N STATUS / MESSAGE
+# ============================================================
+
+if result.get("message"):
+
+    st.info(
+        str(result["message"])
+    )
+
+
+# ============================================================
+# STEP 8 — TIMETABLE
 # ============================================================
 
 st.header("8. Timetable")
@@ -762,23 +777,25 @@ if placed:
     )
 
     display_columns = [
+        "course",
+        "title",
+        "lecturer",
+        "day",
+        "time",
+        "room",
+        "room_capacity",
+        "timeslot_label",
+    ]
+
+    available_columns = [
         column
-        for column in [
-            "course",
-            "title",
-            "lecturer",
-            "day",
-            "time",
-            "room",
-            "room_capacity",
-            "timeslot_label",
-        ]
+        for column in display_columns
         if column in timetable_df.columns
     ]
 
     st.dataframe(
         timetable_df[
-            display_columns
+            available_columns
         ],
         use_container_width=True,
         hide_index=True,
@@ -787,7 +804,128 @@ if placed:
 else:
 
     st.info(
-        "No courses were placed."
+        "No courses were placed into the timetable."
+    )
+
+
+# ============================================================
+# FILTERS
+# ============================================================
+
+if placed:
+
+    st.subheader("Filter Timetable")
+
+    filter_col1, filter_col2, filter_col3 = (
+        st.columns(3)
+    )
+
+    with filter_col1:
+
+        days = sorted(
+            timetable_df[
+                "day"
+            ]
+            .dropna()
+            .unique()
+            .tolist()
+        )
+
+        selected_days = st.multiselect(
+            "Day",
+            days,
+            default=days,
+        )
+
+    with filter_col2:
+
+        rooms = sorted(
+            timetable_df[
+                "room"
+            ]
+            .dropna()
+            .unique()
+            .tolist()
+        )
+
+        selected_rooms = st.multiselect(
+            "Room",
+            rooms,
+            default=rooms,
+        )
+
+    with filter_col3:
+
+        lecturers = sorted(
+            timetable_df[
+                "lecturer"
+            ]
+            .dropna()
+            .unique()
+            .tolist()
+        )
+
+        selected_lecturers = st.multiselect(
+            "Lecturer",
+            lecturers,
+            default=lecturers,
+        )
+
+    filtered_df = timetable_df.copy()
+
+    if selected_days:
+
+        filtered_df = filtered_df[
+            filtered_df[
+                "day"
+            ].isin(selected_days)
+        ]
+
+    if selected_rooms:
+
+        filtered_df = filtered_df[
+            filtered_df[
+                "room"
+            ].isin(selected_rooms)
+        ]
+
+    if selected_lecturers:
+
+        filtered_df = filtered_df[
+            filtered_df[
+                "lecturer"
+            ].isin(selected_lecturers)
+        ]
+
+    st.dataframe(
+        filtered_df[
+            available_columns
+        ],
+        use_container_width=True,
+        hide_index=True,
+    )
+
+
+# ============================================================
+# EXPORT
+# ============================================================
+
+st.header("9. Export")
+
+if placed:
+
+    csv_data = timetable_df[
+        available_columns
+    ].to_csv(
+        index=False
+    )
+
+    st.download_button(
+        "⬇️ Download Timetable CSV",
+        data=csv_data,
+        file_name="generated_timetable.csv",
+        mime="text/csv",
+        use_container_width=True,
     )
 
 
@@ -795,43 +933,52 @@ else:
 # UNPLACED COURSES
 # ============================================================
 
-st.header("9. Unplaced Courses")
-
-
 if unplaced:
 
-    unplaced_df = pd.DataFrame(
-        unplaced
-    )
+    st.divider()
 
-    st.error(
+    st.header("10. Unplaced Courses")
+
+    st.warning(
         f"{len(unplaced)} course(s) could not be placed."
     )
 
     st.dataframe(
-        unplaced_df,
+        pd.DataFrame(unplaced),
         use_container_width=True,
         hide_index=True,
     )
 
-else:
 
-    st.success(
-        "✅ No unplaced courses."
-    )
+# ============================================================
+# MISSING COURSES
+# ============================================================
+
+if missing_courses:
+
+    st.divider()
+
+    st.header("11. Courses Not Found")
+
+    for course in missing_courses:
+
+        st.warning(
+            str(course)
+        )
 
 
 # ============================================================
 # VERIFICATION
 # ============================================================
 
-st.header("10. Verification")
+st.divider()
 
+st.header("12. Verification")
 
 if verification_errors:
 
     st.error(
-        "Verification found issues."
+        "Verification reported issues."
     )
 
     for error in verification_errors:
@@ -843,31 +990,55 @@ if verification_errors:
 else:
 
     st.success(
-        "✅ Independent schedule verification passed."
+        "✅ No verification errors reported."
     )
 
 
 # ============================================================
-# EXPORT
+# CONFLICT / AI REPORT
 # ============================================================
 
-st.header("11. Export")
+if result.get("resolution_report"):
 
+    st.divider()
 
-if placed:
+    st.header("13. Conflict Resolution Report")
 
-    export_df = pd.DataFrame(
-        placed
+    st.markdown(
+        str(
+            result["resolution_report"]
+        )
     )
 
-    csv_data = export_df.to_csv(
-        index=False
+
+# ============================================================
+# DEBUG / REQUEST SUMMARY
+# ============================================================
+
+with st.expander(
+    "Scheduling Request Details"
+):
+
+    st.write(
+        "n8n Production Webhook:"
     )
 
-    st.download_button(
-        label="⬇️ Download Timetable CSV",
-        data=csv_data,
-        file_name="generated_timetable.csv",
-        mime="text/csv",
-        use_container_width=True,
+    st.code(
+        N8N_WEBHOOK_URL
+    )
+
+    st.write(
+        "Selected courses:"
+    )
+
+    st.write(
+        selected_courses
+    )
+
+    st.write(
+        "Enrollment overrides:"
+    )
+
+    st.json(
+        enrollment_overrides
     )
