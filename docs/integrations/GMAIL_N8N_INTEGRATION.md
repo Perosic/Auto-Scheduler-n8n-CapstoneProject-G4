@@ -1,7 +1,6 @@
 # Gmail Timetable Integration (n8n)
 
 **Branch:** `feat/p1-gmail-n8n`
-**Owner:** Jennifer Udeze
 **Tier:** P1 (email delivery of the generated timetable)
 **Workflow file:** `n8n/Gmail_Timetable_Sender.json`
 
@@ -70,7 +69,9 @@ Formal schema: `n8n/schemas/send_schedule.request.schema.json`
 | `schedule[].time` | Yes | e.g. `09:00 - 11:00`. Entries on the same day are sorted by this. |
 | `schedule[].room` | Yes | Room code. |
 
-Extra fields are ignored. This means the `placed` list returned by `algorithm/frontend_scheduler.py` can be sent as `schedule` without reshaping: its items already contain `course`, `title`, `day`, `time` and `room`.
+Extra fields are ignored. This means the `placed` list returned by the scheduler (`algorithm/run.py` through the API, or `algorithm/frontend_scheduler.py`) can be sent as `schedule` without reshaping: its items already contain `course`, `title`, `day`, `time` and `room`.
+
+The scheduler returns short day names and times with seconds (`"day": "Mon"`, `"time": "09:00:00 - 10:00:00"`). The workflow converts these for the email to `Monday` and `09:00 - 10:00`. Full day names and times without seconds are left as they are.
 
 ## 4. Response format
 
@@ -156,7 +157,13 @@ Notes:
 
 ## 7. Testing without Streamlit
 
-Sample payloads are in `n8n/samples/`. Replace `student@example.com` with an inbox you can check before sending the valid sample.
+Sample payloads are in `n8n/samples/`:
+
+- `send_schedule_valid.json`: the 3-class example from the task sheet
+- `send_schedule_seed_data.json`: the real scheduler output from the project seed data (21 placed classes, produced by `algorithm/run.py` against `database/seed_data.sql`)
+- `send_schedule_invalid.json`: a bad request (invalid recipient, missing room)
+
+Replace `student@example.com` with an inbox you can check before sending a valid sample. Do not commit your own email address.
 
 Windows PowerShell (use `curl.exe`, not `curl`, and send the file with `@` so PowerShell does not strip quotes):
 
@@ -216,4 +223,4 @@ The webhook URL should be read from configuration (for example an `N8N_SEND_SCHE
 | Invalid sample (5 Oct 2026) | HTTP 400 with the two expected errors (bad recipient, missing room); no email sent |
 | Gmail failure path (no credential) | HTTP 502 with `Node does not have any credentials set` |
 | Valid sample with Gmail credential (5 Oct 2026) | HTTP 200, `success: true`, `entries_sent: 3`; email received in Gmail inbox with all 3 classes grouped by day (screenshot in PR) |
-| 21-entry schedule using `frontend_scheduler.py` field names, two recipients | Validated, sorted and formatted correctly; 200 response shape confirmed with the Gmail step stubbed |
+| Project seed data (5 Oct 2026): real scheduler output (21 placed classes, `Mon`/`Tue`, times with seconds) | HTTP 200, `entries_sent: 21`; email received with Monday (16 classes) and Tuesday (5 classes), times shown as HH:MM (screenshot in PR) |
