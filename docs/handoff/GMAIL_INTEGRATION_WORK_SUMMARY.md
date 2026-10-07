@@ -47,7 +47,9 @@ Webhook: Send Schedule
 - builds the HTML email (table grouped by day) and a plain-text version that follows the task example
 - escapes all values so course titles with symbols display correctly
 
-**Gmail: Send Timetable** sends the HTML email with the sender name "Group 4 Auto-Scheduler" and the n8n attribution footer turned off. If Gmail fails, the error is routed to its own response instead of stopping the workflow.
+**Gmail: Send Timetable** sends the HTML email with the sender name "Group 4 Auto-Scheduler" and the n8n attribution footer turned off. It retries up to 3 times, 5 seconds apart, as taught in class. If Gmail still fails, the error is routed to its own response instead of stopping the workflow.
+
+The email shows Time, Course, Title, Lecturer and Room. "Lecturer" is the scheduler's field name for what the database calls an instructor; the column is left out if a request has no lecturers.
 
 ## 2. Webhook contract
 
@@ -97,6 +99,8 @@ Environment: Windows, n8n 2.31.4 in Docker, tested on 5 October 2026.
 | n8n execution record | Executions tab | Run #29 followed the Gmail → Sent path. Run #30 followed the Invalid Request path |
 | Gmail failure path | Workflow run without a Gmail credential (pre-check) | HTTP 502 with the Gmail error message |
 | Project seed data | Real scheduler output from `database/seed_data.sql` (21 placed classes) sent with `curl.exe` | HTTP 200, `entries_sent: 21`. Email received with Monday (16 classes) and Tuesday (5 classes), times shown as 09:00 - 10:00 |
+| Lecturer column | Scheduler output with lecturers; payload without lecturers | Lecturer column shown with the right names; left out when no lecturers are sent |
+| Gmail retries | Workflow with no Gmail credential | Retried 3 times, then HTTP 502 with the Gmail error |
 | Import check | Fresh import on n8n 2.31.4 | All 7 nodes recognised, no unknown nodes |
 
 Screenshots of the email, the PowerShell responses and the n8n executions are attached to PR #13.

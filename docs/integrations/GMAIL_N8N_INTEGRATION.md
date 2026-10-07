@@ -65,11 +65,12 @@ Formal schema: `n8n/schemas/send_schedule.request.schema.json`
 | `schedule` | Yes | List with at least one entry. |
 | `schedule[].course` | Yes | Course code. |
 | `schedule[].title` | No | Course title. Left blank in the email if missing. |
+| `schedule[].lecturer` | No | Lecturer name, shown in a Lecturer column. `instructor` is accepted as an alternative field name (the database calls them instructors). The column only appears when at least one class has a lecturer. |
 | `schedule[].day` | Yes | e.g. `Monday`. Entries are sorted Monday to Sunday. |
 | `schedule[].time` | Yes | e.g. `09:00 - 11:00`. Entries on the same day are sorted by this. |
 | `schedule[].room` | Yes | Room code. |
 
-Extra fields are ignored. This means the `placed` list returned by the scheduler (`algorithm/run.py` through the API, or `algorithm/frontend_scheduler.py`) can be sent as `schedule` without reshaping: its items already contain `course`, `title`, `day`, `time` and `room`.
+Extra fields are ignored. This means the `placed` list returned by the scheduler (`algorithm/run.py` through the API, or `algorithm/frontend_scheduler.py`) can be sent as `schedule` without reshaping: its items already contain `course`, `title`, `lecturer`, `day`, `time` and `room`.
 
 The scheduler returns short day names and times with seconds (`"day": "Mon"`, `"time": "09:00:00 - 10:00:00"`). The workflow converts these for the email to `Monday` and `09:00 - 10:00`. Full day names and times without seconds are left as they are.
 
@@ -117,9 +118,11 @@ Callers should check `success` first, then show `errors` (400) or `error` (502) 
 
 ## 5. Email content
 
-The email is sent as HTML: a heading with the subject, a count of classes, and a table grouped by day with Time, Course, Title and Room columns. All values are HTML-escaped. The n8n attribution footer is turned off and the sender name is `Group 4 Auto-Scheduler`.
+The email is sent as HTML: a heading with the subject, a count of classes, and a table grouped by day with Time, Course, Title, Lecturer and Room columns (Lecturer only when the request includes lecturers). All values are HTML-escaped. The n8n attribution footer is turned off and the sender name is `Group 4 Auto-Scheduler`.
 
-The formatting node also produces a plain-text version that follows the task example:
+The Gmail node retries up to 3 times, 5 seconds apart (n8n's maximum wait between tries), before returning the 502 failure response. This follows the retry guidance from class.
+
+The formatting node also produces a plain-text version that follows the task example (with ` | lecturer` added at the end of the line when a lecturer is given):
 
 ```text
 Your Course Timetable
@@ -224,3 +227,5 @@ The webhook URL should be read from configuration (for example an `N8N_SEND_SCHE
 | Gmail failure path (no credential) | HTTP 502 with `Node does not have any credentials set` |
 | Valid sample with Gmail credential (5 Oct 2026) | HTTP 200, `success: true`, `entries_sent: 3`; email received in Gmail inbox with all 3 classes grouped by day (screenshot in PR) |
 | Project seed data (5 Oct 2026): real scheduler output (21 placed classes, `Mon`/`Tue`, times with seconds) | HTTP 200, `entries_sent: 21`; email received with Monday (16 classes) and Tuesday (5 classes), times shown as HH:MM (screenshot in PR) |
+| Lecturer column (7 Oct 2026): scheduler output including `lecturer`; payload without lecturers; mixed payload with `instructor`; names containing `<` and `&` | Lecturer column shown with the right names; no column when no lecturers are sent; `instructor` accepted; names escaped correctly |
+| Gmail failure with retries (7 Oct 2026): workflow with no Gmail credential | Gmail node retried 3 times (about 10 seconds in total), then HTTP 502 with the Gmail error |

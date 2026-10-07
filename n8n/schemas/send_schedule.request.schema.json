@@ -3,12 +3,17 @@
   "title": "Send Schedule Request",
   "description": "Body for POST /webhook/send-schedule (n8n Gmail Timetable Sender).",
   "type": "object",
-  "required": ["recipient", "schedule"],
+  "required": [
+    "recipient",
+    "schedule"
+  ],
   "properties": {
     "recipient": {
       "type": "string",
       "description": "One email address, or several separated by commas.",
-      "examples": ["student@example.com"]
+      "examples": [
+        "student@example.com"
+      ]
     },
     "subject": {
       "type": "string",
@@ -19,13 +24,50 @@
       "minItems": 1,
       "items": {
         "type": "object",
-        "required": ["course", "day", "time", "room"],
+        "required": [
+          "course",
+          "day",
+          "time",
+          "room"
+        ],
         "properties": {
-          "course": { "type": "string", "examples": ["CSC101"] },
-          "title": { "type": "string", "examples": ["Computer Science"] },
-          "day": { "type": "string", "examples": ["Monday"] },
-          "time": { "type": "string", "examples": ["09:00 - 11:00"] },
-          "room": { "type": "string", "examples": ["CR101"] }
+          "course": {
+            "type": "string",
+            "examples": [
+              "CSC101"
+            ]
+          },
+          "title": {
+            "type": "string",
+            "examples": [
+              "Computer Science"
+            ]
+          },
+          "lecturer": {
+            "type": "string",
+            "description": "Optional. Shown in a Lecturer column. \"instructor\" is accepted as an alternative name.",
+            "examples": [
+              "Dr. Ada Okonkwo"
+            ]
+          },
+          "day": {
+            "type": "string",
+            "examples": [
+              "Monday"
+            ]
+          },
+          "time": {
+            "type": "string",
+            "examples": [
+              "09:00 - 11:00"
+            ]
+          },
+          "room": {
+            "type": "string",
+            "examples": [
+              "CR101"
+            ]
+          }
         },
         "additionalProperties": true
       }
