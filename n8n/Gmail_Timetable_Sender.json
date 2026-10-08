@@ -1,0 +1,213 @@
+{
+  "name": "Gmail Timetable Sender",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "send-schedule",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "9fc53e79-51b0-4f84-9a22-4f641b6c6644",
+      "name": "Webhook: Send Schedule",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        300
+      ],
+      "webhookId": "90f1912d-e723-4e11-b8a8-abaa22bd593e"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Validate the incoming timetable request and build the email.\n// Input: the Webhook item. The JSON body sent by the caller is in $json.body.\nconst body = $input.first().json.body || {};\nconst errors = [];\n\n// ---------- recipient ----------\nconst EMAIL_RE = /^[^\\s@,;]+@[^\\s@,;]+\\.[^\\s@,;]+$/;\nlet recipient = typeof body.recipient === 'string' ? body.recipient.trim() : '';\nif (!recipient) {\n  errors.push('\"recipient\" is required (an email address).');\n} else {\n  const addresses = recipient.split(',').map(a => a.trim()).filter(Boolean);\n  const bad = addresses.filter(a => !EMAIL_RE.test(a));\n  if (addresses.length === 0 || bad.length > 0) {\n    errors.push(`\"recipient\" contains an invalid email address: ${bad.join(', ') || recipient}`);\n  }\n  recipient = addresses.join(', ');\n}\n\n// ---------- subject ----------\nlet subject = 'Your Course Timetable';\nif (body.subject !== undefined && body.subject !== null) {\n  if (typeof body.subject !== 'string') {\n    errors.push('\"subject\" must be text if provided.');\n  } else if (body.subject.trim()) {\n    subject = body.subject.trim();\n  }\n}\n\n// ---------- display helpers ----------\n// The scheduler API sends short days (\"Mon\") and times with seconds (\"09:00:00\").\nconst DAY_NAMES = { mon: 'Monday', tue: 'Tuesday', wed: 'Wednesday', thu: 'Thursday', fri: 'Friday', sat: 'Saturday', sun: 'Sunday' };\nconst fullDay = d => DAY_NAMES[d.slice(0, 3).toLowerCase()] || d;\n\n// ---------- schedule ----------\nconst schedule = body.schedule;\nconst REQUIRED = ['course', 'day', 'time', 'room'];\nconst entries = [];\nif (!Array.isArray(schedule)) {\n  errors.push('\"schedule\" is required and must be a list of timetable entries.');\n} else if (schedule.length === 0) {\n  errors.push('\"schedule\" is empty. There is no timetable to send.');\n} else {\n  schedule.forEach((entry, i) => {\n    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {\n      errors.push(`schedule[${i}] must be an object.`);\n      return;\n    }\n    const missing = REQUIRED.filter(k => entry[k] === undefined || entry[k] === null || String(entry[k]).trim() === '');\n    if (missing.length) {\n      errors.push(`schedule[${i}] is missing: ${missing.join(', ')}.`);\n      return;\n    }\n    entries.push({\n      course: String(entry.course).trim(),\n      title: entry.title ? String(entry.title).trim() : '',\n      // \"lecturer\" is the scheduler's field name; \"instructor\" is the database term.\n      lecturer: (entry.lecturer || entry.instructor)\n        ? String(entry.lecturer || entry.instructor).trim()\n        : '',\n      day: fullDay(String(entry.day).trim()),\n      time: String(entry.time).trim().replace(/(\\b\\d{1,2}:\\d{2}):\\d{2}\\b/g, '$1'),\n      room: String(entry.room).trim(),\n    });\n  });\n}\n\nif (errors.length) {\n  return [{ json: { valid: false, errors } }];\n}\n\n// ---------- sort: day of week, then start time ----------\nconst DAY_ORDER = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];\nconst dayRank = d => {\n  const i = DAY_ORDER.indexOf(d.slice(0, 3).toLowerCase());\n  return i === -1 ? 99 : i;\n};\nentries.sort((a, b) =>\n  dayRank(a.day) - dayRank(b.day) ||\n  a.time.localeCompare(b.time) ||\n  a.course.localeCompare(b.course)\n);\n\n// ---------- plain-text version (matches the task example) ----------\nconst label = e => (e.title ? `${e.course} - ${e.title}` : e.course);\nconst text = [subject, '']\n  .concat(entries.map(e =>\n    `${label(e)}\\n${e.day} | ${e.time} | ${e.room}${e.lecturer ? ` | ${e.lecturer}` : ''}\\n`))\n  .join('\\n');\n\n// Show the Lecturer column only when at least one class has a lecturer.\nconst showLecturer = entries.some(e => e.lecturer);\nconst columnCount = showLecturer ? 5 : 4;\n\n// ---------- HTML version (what Gmail sends) ----------\nconst esc = s => String(s)\n  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')\n  .replace(/\"/g, '&quot;').replace(/'/g, '&#39;');\n\nconst cell = 'padding:8px 10px;border-bottom:1px solid #e3e8ef;';\nlet rows = '';\nlet lastDay = null;\nfor (const e of entries) {\n  if (e.day !== lastDay) {\n    rows += `<tr><td colspan=\"${columnCount}\" style=\"padding:10px 10px 6px;background:#eef3f8;font-weight:bold;color:#16324f;\">${esc(e.day)}</td></tr>`;\n    lastDay = e.day;\n  }\n  rows += `<tr>`\n    + `<td style=\"${cell}white-space:nowrap;\">${esc(e.time)}</td>`\n    + `<td style=\"${cell}font-weight:bold;white-space:nowrap;\">${esc(e.course)}</td>`\n    + `<td style=\"${cell}\">${esc(e.title)}</td>`\n    + (showLecturer ? `<td style=\"${cell}\">${esc(e.lecturer)}</td>` : '')\n    + `<td style=\"${cell}white-space:nowrap;\">${esc(e.room)}</td>`\n    + `</tr>`;\n}\n\nconst plural = entries.length === 1 ? 'class' : 'classes';\nconst html = `<div style=\"font-family:Arial,Helvetica,sans-serif;color:#1c2430;max-width:640px;\">\n<h2 style=\"color:#0f2a44;margin:0 0 6px;\">${esc(subject)}</h2>\n<p style=\"margin:0 0 14px;color:#4a5667;\">${entries.length} ${plural}, listed by day and time.</p>\n<table style=\"border-collapse:collapse;width:100%;font-size:14px;\">\n<thead><tr>\n<th style=\"text-align:left;padding:8px 10px;background:#16324f;color:#ffffff;\">Time</th>\n<th style=\"text-align:left;padding:8px 10px;background:#16324f;color:#ffffff;\">Course</th>\n<th style=\"text-align:left;padding:8px 10px;background:#16324f;color:#ffffff;\">Title</th>\n${showLecturer ? '<th style=\"text-align:left;padding:8px 10px;background:#16324f;color:#ffffff;\">Lecturer</th>' : ''}\n<th style=\"text-align:left;padding:8px 10px;background:#16324f;color:#ffffff;\">Room</th>\n</tr></thead>\n<tbody>${rows}</tbody>\n</table>\n<p style=\"margin:16px 0 0;font-size:12px;color:#7a8696;\">Generated by the Group 4 Auto-Scheduler.</p>\n</div>`;\n\nreturn [{ json: { valid: true, recipient, subject, entries_count: entries.length, text, html } }];\n"
+      },
+      "id": "4f9a9678-a8ec-41be-84e9-af2b381f4b20",
+      "name": "Validate & Format Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cae92969-6951-42dd-bde6-a88d31a873a2",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "9f27663f-4416-463f-ae79-177024689a44",
+      "name": "Request Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        480,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.recipient }}",
+        "subject": "={{ $json.subject }}",
+        "emailType": "html",
+        "message": "={{ $json.html }}",
+        "options": {
+          "appendAttribution": false,
+          "senderName": "Group 4 Auto-Scheduler"
+        }
+      },
+      "id": "ee9b4e8e-875b-466e-b50f-3d2e55b1486f",
+      "name": "Gmail: Send Timetable",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        740,
+        180
+      ],
+      "onError": "continueErrorOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({\n  success: true,\n  message: \"Timetable email sent successfully\",\n  recipient: $('Validate & Format Email').first().json.recipient,\n  entries_sent: $('Validate & Format Email').first().json.entries_count,\n  gmail_message_id: $json.id\n}) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "132600ab-87c0-4a18-aaee-21efb6e30037",
+      "name": "Respond: Sent (200)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1000,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({\n  success: false,\n  message: \"Failed to send timetable email through Gmail.\",\n  error: (typeof $json.error === 'string') ? $json.error : (($json.error && $json.error.message) || 'Unknown Gmail error'),\n  recipient: $('Validate & Format Email').first().json.recipient\n}) }}",
+        "options": {
+          "responseCode": 502
+        }
+      },
+      "id": "656ab37a-6503-4075-96ae-b7f7da753bf3",
+      "name": "Respond: Gmail Failed (502)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1000,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({\n  success: false,\n  message: \"Invalid timetable request. Email was not sent.\",\n  errors: $json.errors\n}) }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "c19f1ead-185c-4395-8668-aa55179da3f2",
+      "name": "Respond: Invalid Request (400)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        740,
+        440
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook: Send Schedule": {
+      "main": [
+        [
+          {
+            "node": "Validate & Format Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate & Format Email": {
+      "main": [
+        [
+          {
+            "node": "Request Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Request Valid?": {
+      "main": [
+        [
+          {
+            "node": "Gmail: Send Timetable",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond: Invalid Request (400)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail: Send Timetable": {
+      "main": [
+        [
+          {
+            "node": "Respond: Sent (200)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond: Gmail Failed (502)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "id": "G4GmailTimetabl",
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}

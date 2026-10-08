@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Send Schedule Response",
+  "description": "Response from POST /webhook/send-schedule. HTTP 200 = sent, 400 = invalid request, 502 = Gmail send failed.",
+  "oneOf": [
+    {
+      "title": "Sent (HTTP 200)",
+      "type": "object",
+      "required": ["success", "message"],
+      "properties": {
+        "success": { "const": true },
+        "message": { "const": "Timetable email sent successfully" },
+        "recipient": { "type": "string" },
+        "entries_sent": { "type": "integer" },
+        "gmail_message_id": { "type": "string" }
+      }
+    },
+    {
+      "title": "Invalid request (HTTP 400)",
+      "type": "object",
+      "required": ["success", "message", "errors"],
+      "properties": {
+        "success": { "const": false },
+        "message": { "const": "Invalid timetable request. Email was not sent." },
+        "errors": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    {
+      "title": "Gmail failed (HTTP 502)",
+      "type": "object",
+      "required": ["success", "message", "error"],
+      "properties": {
+        "success": { "const": false },
+        "message": { "const": "Failed to send timetable email through Gmail." },
+        "error": { "type": "string" },
+        "recipient": { "type": "string" }
+      }
+    }
+  ]
+}
