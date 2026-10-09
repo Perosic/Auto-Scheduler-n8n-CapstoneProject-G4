@@ -140,6 +140,8 @@ Key files you will use:
 | `docs/integrations/GMAIL_N8N_INTEGRATION.md` | Full technical detail for the Gmail workflow |
 | `docs/integrations/STREAMLIT_GMAIL_CONNECTION.md` | How Streamlit talks to the Gmail webhook |
 
+**n8n workflows:** always import from the **`n8n/`** folder (`n8n_streamlit_integration_v2.json` and `Gmail_Timetable_Sender.json`). The `workflows/` folder is historical/archive only — do not import from there for a new setup.
+
 ---
 
 ## 4. Create the environment file
@@ -159,11 +161,15 @@ POSTGRES_DB=auto_scheduler
 N8N_PORT=5678
 ```
 
-You do **not** need to fill in the Slack or OpenAI entries for the core workflow. The Gemini key is entered inside n8n later (section 7). Gmail credentials are also created inside n8n (never put Client ID / Secret into `.env` for this project).
+You do **not** need to fill in the Slack entries for the core workflow. The Gemini key is entered inside n8n later (section 7). Gmail credentials are also created inside n8n (never put Client ID / Secret into `.env` for this project).
 
-Optional environment variable used by Streamlit for the email webhook (defaults are already correct for local use):
+Optional environment variables used by Streamlit (defaults are already correct for local use):
 
 ```text
+# Scheduling webhook (Streamlit → n8n). Change only if you change the webhook path in n8n.
+N8N_SCHEDULE_WEBHOOK_URL=http://localhost:5678/webhook/08190fdc-b0cf-4c0f-a7c0-b6c60e7595e2
+
+# Gmail webhook (Streamlit → n8n email workflow)
 N8N_SEND_SCHEDULE_URL=http://localhost:5678/webhook/send-schedule
 ```
 
@@ -189,7 +195,17 @@ This installs `psycopg2-binary` and `python-dotenv` (scheduler), `streamlit` and
 .\.venv\Scripts\Activate.ps1
 ```
 
-> **macOS / Linux:** use `python3 -m venv .venv`, activate with `source .venv/bin/activate`, and write paths with `/` (for example `pip install -r algorithm/requirements.txt`). On Linux, Docker may also need `extra_hosts: ["host.docker.internal:host-gateway"]` on the `n8n` service so n8n can reach the Python API.
+> **macOS / Linux:** use `python3 -m venv .venv`, activate with `source .venv/bin/activate`, and write paths with `/` (for example `pip install -r algorithm/requirements.txt`).
+>
+> **Linux only — if n8n cannot reach the Python API** (`host.docker.internal` fails): Docker Desktop on Windows/macOS resolves this automatically. On native Linux it often does not. Options:
+> 1. **Preferred:** under the `n8n` service in `docker-compose.yml`, add:
+>    ```yaml
+>    extra_hosts:
+>      - "host.docker.internal:host-gateway"
+>    ```
+>    then `docker compose up -d` again.
+> 2. **Alternative:** in the n8n HTTP Request node, replace `host.docker.internal` with your machine’s LAN IP (e.g. `http://192.168.x.x:8000/schedule`).
+> 3. **Alternative:** run the Python API in a way reachable on the Docker bridge network, or temporarily test the API with `curl` from the host while debugging connectivity.
 
 ---
 
@@ -285,7 +301,7 @@ The production URL Streamlit calls is:
 http://localhost:5678/webhook/08190fdc-b0cf-4c0f-a7c0-b6c60e7595e2
 ```
 
-That path is hard-coded in `frontend/app.py` as `N8N_WEBHOOK_URL`. If you change the path in n8n, update the constant in `app.py` (or set an environment variable if you prefer).
+The default path is set in `frontend/app.py` and can be overridden with the environment variable `N8N_SCHEDULE_WEBHOOK_URL`. If you change the path in n8n, set that variable (or update the default in `app.py`) to match.
 
 ### 7.5 Activate the scheduling workflow
 
@@ -450,16 +466,10 @@ Your CSV needs one row per course with these five pieces of information. Column 
 | Course code | `course_code`, `Course Code`, `code`, `Course` |
 | Title | `title`, `Course Title`, `name` |
 | Enrolment | `enrollment`, `students`, `Enrolment`, `size` |
-| Duration (hours) | `duration`, `hours`, `Duration` |
-| Preferred / allowed times (optional) | `preferred_times`, `timeslots` |
+| Instructor | `instructor`, `lecturer` |
+| Course id | `course_id`, `id` |
 
-A ready-made clean CSV is in the repo:
-
-```text
-frontend/test_scheduler_courses.csv
-```
-
-Upload that file for a first successful run. To exercise the conflict path, include any of the deliberate failure codes (CSC999, CSC351, CSC352, MTH401, MTH402, MTH403).
+A ready-made clean CSV is in the repo: `frontend/test_scheduler_courses.csv`.
 
 ### 10.2 Generate a schedule
 
@@ -469,24 +479,9 @@ Upload that file for a first successful run. To exercise the conflict path, incl
 4. Optionally adjust enrolment numbers.
 5. Click **Generate Schedule**.
 
-Streamlit posts to the n8n scheduling webhook. n8n calls the Python API, runs the scheduler, and returns either a timetable or a conflict report.
+### 10.3 Send the timetable by email (optional)
 
-### 10.3 Read the results
-
-- **Success path:** a table of placed courses (day, time, room, lecturer) and a downloadable CSV.
-- **Conflict path:** a list of unplaced courses with reason codes, plus (if Gemini is configured) an AI-written Conflict Resolution Report.
-
-### 10.4 Send the timetable by email (optional)
-
-Under **9. Export**, when at least one course was placed:
-
-1. Enter one or more recipient addresses (comma-separated).
-2. Optionally change the subject (default: "Your Course Timetable").
-3. Click **Send Timetable**.
-
-Streamlit posts to the Gmail n8n workflow (`/webhook/send-schedule`). The email is HTML, grouped by day, with Time / Course / Title / Lecturer / Room columns.
-
-If the Gmail workflow is not imported or not published, Streamlit shows a clear error telling you how to fix it. A Gmail failure never blocks schedule generation.
+Under **9. Export**, when at least one course was placed: enter recipient(s), optionally change the subject, click **Send Timetable**.
 
 ---
 
@@ -499,15 +494,7 @@ If the Gmail workflow is not imported or not published, Streamlit shows a clear 
 | `violations_count` | Residual hard-constraint violations on the *placed* set (should be 0) |
 | `verification_errors` | Human-readable list from the independent verifier |
 
-`reason_code` values:
-
-- `ROOM_CAPACITY` — enrolment exceeds every available room
-- `ROOM_EQUIPMENT` — needs a lab/equipment type that is already fully booked
-- `CO_ENROLMENT` — clique of co-enrolled courses with too few free slots
-- `INSTRUCTOR_CLASH` — instructor hour or overlap limit
-- `OTHER` — catch-all
-
-A run can return unplaced courses while `violations_count = 0`. That means everything that *was* placed is conflict-free; the unplaced items are the ones the algorithm could not fit.
+`reason_code` values: `ROOM_CAPACITY` | `ROOM_EQUIPMENT` | `CO_ENROLMENT` | `INSTRUCTOR_CLASH` | `OTHER` | `COURSE_NOT_FOUND`
 
 ---
 
@@ -531,6 +518,8 @@ streamlit run frontend/app.py
 
 Confirm both n8n workflows are **Active / Published**, then open http://localhost:8501.
 
+**Before a demo:** re-open the Gmail credential in n8n and click **Sign in with Google** again if the app is still in Testing status (tokens expire after ~7 days).
+
 ---
 
 ## 13. Stopping and resetting
@@ -544,8 +533,6 @@ docker compose down
 # Stop Docker and delete the Postgres volume (full reset of seed data)
 docker compose down -v
 ```
-
-After a volume reset, the next `docker compose up -d` reloads schema and seed data automatically.
 
 ---
 
@@ -561,7 +548,7 @@ After a volume reset, the next `docker compose up -d` reloads schema and seed da
 | Gmail send fails / 502 | Credential expired or missing | Re-open the Gmail credential in n8n → Sign in with Google again (Testing apps expire ~7 days) |
 | Gmail 404 from Streamlit | Workflow not imported or not published | Import `n8n/Gmail_Timetable_Sender.json` and Publish it |
 | Port already in use | Another process on 5432 / 5678 / 8000 / 8501 | Stop the other process or change the port in `.env` / Streamlit |
-| `host.docker.internal` fails on Linux | Docker networking | Add `extra_hosts: ["host.docker.internal:host-gateway"]` under the n8n service in `docker-compose.yml` |
+| `host.docker.internal` fails (usually Linux) | Docker cannot resolve the host from the n8n container | See the **Linux only** note in section 5: add `extra_hosts` under n8n, or use your LAN IP in the HTTP Request node |
 
 ---
 
@@ -569,8 +556,8 @@ After a volume reset, the next `docker compose up -d` reloads schema and seed da
 
 | Item | Value |
 |---|---|
-| Scheduling webhook (Streamlit → n8n) | `http://localhost:5678/webhook/08190fdc-b0cf-4c0f-a7c0-b6c60e7595e2` |
-| Gmail webhook (Streamlit → n8n) | `http://localhost:5678/webhook/send-schedule` |
+| Scheduling webhook (Streamlit → n8n) | `http://localhost:5678/webhook/08190fdc-b0cf-4c0f-a7c0-b6c60e7595e2` (override: `N8N_SCHEDULE_WEBHOOK_URL`) |
+| Gmail webhook (Streamlit → n8n) | `http://localhost:5678/webhook/send-schedule` (override: `N8N_SEND_SCHEDULE_URL`) |
 | Python API | `http://localhost:8000` (`GET /health`, `POST /schedule`) |
 | From n8n container to API | `http://host.docker.internal:8000/schedule` |
 | Scheduling workflow file | `n8n/n8n_streamlit_integration_v2.json` |

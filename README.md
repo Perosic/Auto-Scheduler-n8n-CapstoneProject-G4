@@ -72,7 +72,7 @@ Python scheduling engine
 
 **Full install, run, Gmail setup, and troubleshooting:**
 
-→ **[User Guide — START_SCHEDULER.md](user%20guide/START_SCHEDULER.md)**
+→ **[User Guide — START_SCHEDULER.md](user-guide/START_SCHEDULER.md)**
 
 That guide walks through Docker, the Python API, n8n workflow import, Streamlit, and optional email end-to-end.
 

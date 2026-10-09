@@ -6,6 +6,7 @@ Run:
     streamlit run frontend/app.py
 """
 
+import os
 import sys
 from pathlib import Path
 
@@ -30,9 +31,11 @@ from frontend.email_timetable import render_email_section
 # N8N PRODUCTION WEBHOOK
 # ============================================================
 
-N8N_WEBHOOK_URL = (
-    "http://localhost:5678/webhook/"
-    "08190fdc-b0cf-4c0f-a7c0-b6c60e7595e2"
+# Override with N8N_SCHEDULE_WEBHOOK_URL in .env / environment if the
+# n8n webhook path changes. Default matches n8n/n8n_streamlit_integration_v2.json.
+N8N_WEBHOOK_URL = os.getenv(
+    "N8N_SCHEDULE_WEBHOOK_URL",
+    "http://localhost:5678/webhook/08190fdc-b0cf-4c0f-a7c0-b6c60e7595e2",
 )
 
 N8N_TIMEOUT_SECONDS = 180
@@ -43,7 +46,7 @@ N8N_TIMEOUT_SECONDS = 180
 # ============================================================
 
 st.set_page_config(
-    page_title="University Course Scheduler",
+    page_title="Auto-Scheduler",
     page_icon="📅",
     layout="wide",
 )
@@ -53,7 +56,7 @@ st.set_page_config(
 # HEADER
 # ============================================================
 
-st.title("📅 University Course Scheduler")
+st.title("📅 Auto-Scheduler")
 
 st.caption(
     "Upload courses, select courses, generate a timetable "
@@ -941,11 +944,7 @@ if unplaced:
 
     st.divider()
 
-    st.header("10. Unplaced Courses")
-
-    st.warning(
-        f"{len(unplaced)} course(s) could not be placed."
-    )
+    st.header("Unplaced Courses")
 
     st.dataframe(
         pd.DataFrame(unplaced),
@@ -954,65 +953,42 @@ if unplaced:
     )
 
 
-# ============================================================
-# MISSING COURSES
-# ============================================================
-
 if missing_courses:
 
-    st.divider()
+    st.header("Missing Courses")
 
-    st.header("11. Courses Not Found")
+    st.warning(
+        "These course codes were in the CSV but not found "
+        "in the scheduling database."
+    )
 
-    for course in missing_courses:
+    st.dataframe(
+        pd.DataFrame(missing_courses),
+        use_container_width=True,
+        hide_index=True,
+    )
 
-        st.warning(
-            str(course)
-        )
-
-
-# ============================================================
-# VERIFICATION
-# ============================================================
-
-st.divider()
-
-st.header("12. Verification")
 
 if verification_errors:
 
-    st.error(
-        "Verification reported issues."
-    )
+    st.header("Verification Issues")
 
     for error in verification_errors:
 
-        st.warning(
-            str(error)
-        )
-
-else:
-
-    st.success(
-        "✅ No verification errors reported."
-    )
+        st.error(str(error))
 
 
 # ============================================================
 # CONFLICT / AI REPORT
 # ============================================================
 
-if result.get("resolution_report"):
+if result.get("conflict_report") or result.get("ai_report"):
 
-    st.divider()
+    st.header("Conflict Report")
 
-    st.header("13. Conflict Resolution Report")
+    report = result.get("conflict_report") or result.get("ai_report")
 
-    st.markdown(
-        str(
-            result["resolution_report"]
-        )
-    )
+    st.markdown(str(report))
 
 
 # ============================================================
