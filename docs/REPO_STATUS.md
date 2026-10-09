@@ -1,42 +1,52 @@
 # Repository Sync & Integration Status
 
-_Last checked: 2026-10-03_
+_Last checked: 2026-10-09_
 
 ## Current state
 
-The repository now contains the validated **P0 scheduler pipeline**:
+The repository contains the validated **P0 scheduler pipeline** plus **P1 Streamlit UI and Gmail email delivery**:
 
-PostgreSQL → Python scheduling/verification → HTTP API → n8n orchestration → conflict reporting or HTML timetable output.
+PostgreSQL → Python scheduling/verification → HTTP API → n8n orchestration → conflict reporting or HTML timetable → (optional) Streamlit UI → (optional) Gmail timetable email.
 
 ### Implemented
 
-- PostgreSQL schema and seed data.
+**P0**
+- PostgreSQL schema and seed data (28 courses, including deliberate failure fixtures).
 - Docker Compose for PostgreSQL, pgAdmin, n8n and Gotenberg.
 - Conflict graph and DSATUR timeslot scheduling.
 - Room/resource assignment.
 - Independent schedule verifier.
-- Python GET /health and POST /schedule API.
+- Python `GET /health` and `POST /schedule` API.
 - Locked algorithm → n8n output fields.
 - n8n Contract Validation.
 - Conflict routing and Gemini conflict explanation.
 - Successful/no-conflict HTML timetable branch.
-- Reproducible n8n workflow export at workflows/course_scheduler_workflow.json.
+- Reproducible n8n workflow exports under `n8n/` and `workflows/`.
+
+**P1**
+- Streamlit frontend (`frontend/app.py`) with CSV upload, course selection, timetable view, and export.
+- n8n Streamlit integration workflow: `n8n/n8n_streamlit_integration_v2.json`.
+- Standalone Gmail Timetable Sender workflow: `n8n/Gmail_Timetable_Sender.json`.
+- Streamlit → Gmail connection (`frontend/email_timetable.py`).
+- Integration docs under `docs/integrations/`.
+- Full user guide: `user guide/START_SCHEDULER.md`.
 
 ## Validation record
 
-The local validation covered:
+Local validation has covered:
 
 1. Python API health endpoint.
 2. Python scheduling endpoint.
-3. n8n HTTP Request via host.docker.internal.
+3. n8n HTTP Request via `host.docker.internal`.
 4. Contract Validation.
 5. Conflict IF routing.
-6. Conflict Handler.
-7. Gemini AI Agent conflict reporting.
-8. Conflict Success output.
-9. Successful/no-conflict HTML timetable path using successful test input.
+6. Conflict Handler + Gemini AI Agent conflict reporting.
+7. Conflict Success output.
+8. Successful/no-conflict HTML timetable path.
+9. Streamlit → n8n → scheduler end-to-end (conflict-free and conflict CSVs).
+10. Gmail Timetable Sender (standalone samples + from Streamlit “Send Timetable”).
 
-The seeded database is intentionally capable of producing unplaced courses so the conflict path can be demonstrated. The exact counts should be taken from the latest clean run rather than copied from an older run.
+The seeded database is intentionally capable of producing unplaced courses so the conflict path can be demonstrated. Exact counts should be taken from the latest clean run rather than copied from an older run.
 
 ## Fixture note
 
@@ -44,11 +54,11 @@ The seed contains 28 course-sections, including deliberate failure fixtures. Do 
 
 ## Contract note
 
-The API currently returns rich placed-course fields (course/title/day/time/timeslot/room) plus the required placed[], unplaced[], violations_count, and verification_errors[] fields used by n8n. The checked-in contract example should be treated as the interface reference and kept synchronized if the public shape changes.
+The API returns rich placed-course fields (course/title/day/time/timeslot/room/lecturer) plus the required `placed[]`, `unplaced[]`, `violations_count`, and `verification_errors[]` fields used by n8n. The checked-in contract example should be treated as the interface reference and kept synchronized if the public shape changes.
 
-## Remaining cleanup
+## Remaining / optional
 
-- Run one clean end-to-end validation from a fresh database state and record the exact output.
-- Finalize/merge the Person C branch after team review.
-- Keep P0 stable for the final demo/presentation.
-- Add P1 features only if they are required by the final presentation scope.
+- One clean end-to-end validation from a fresh database state; record exact output for the demo script.
+- Keep the P0 pipeline stable for presentation.
+- PDF (Gotenberg) and Slack messaging remain optional P1 polish if time allows.
+- P2 interactive Slack approval buttons stay lowest priority.

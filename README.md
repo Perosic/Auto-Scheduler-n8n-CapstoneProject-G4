@@ -1,231 +1,114 @@
-# Course Timetable Auto-Scheduler
+# Auto-Scheduler
 
-**Group 4 Capstone · Masterplan v3 (FINAL)**
+**Conflict-free university course timetables — generated in minutes, not days.**
 
-Conflict-free university course timetable scheduler. It loads courses, rooms, instructors and constraints from PostgreSQL, runs a DSATUR-based scheduling algorithm with independent verification, and orchestrates the result through **n8n** — producing either an HTML timetable or an AI-assisted conflict report.
+Auto-Scheduler turns a list of courses, rooms, instructors and hard constraints into a verified timetable. Upload a CSV, select what to schedule, and get either a clean timetable or a clear explanation of why certain courses could not be placed — with the option to email the result.
 
-> **Status (2026-10-03)**  
-> P0 pipeline is implemented and validated locally: database → Python scheduler + verifier → HTTP API → n8n (conflict path + HTML timetable path).
-
----
-
-## Why this exists
-
-Manual timetable construction is error-prone and slow. This project automates placement under hard constraints (room capacity, equipment, instructor availability, co-enrolment, allowed timeslots) and surfaces the courses that cannot be placed so humans can act on them.
-
-**P0 (never cut):** Database → DSATUR scheduling → verified `placed[]` / `unplaced[]` → n8n → HTML timetable or conflict explanation.
+Built as a Group 4 Capstone (Masterplan v3) around a DSATUR scheduling engine, PostgreSQL, and **n8n** orchestration.
 
 ---
 
-## Quick Start
+## The problem
 
-### 1. Clone and start the stack
+Building a semester timetable by hand is slow and fragile. One capacity mismatch, one lab clash, or one co-enrolled group with too few free slots and the whole grid has to be reworked. Conflicts are easy to miss until students or lecturers complain.
 
-```bash
-git clone https://github.com/Perosic/Auto-Scheduler-n8n-CapstoneProject-G4.git
-cd Auto-Scheduler-n8n-CapstoneProject-G4
-
-cp .env.example .env          # optional – defaults work for local demo
-docker compose up -d
-```
-
-Schema and seed data are applied automatically on first Postgres start.
-
-| Service   | URL / Port              | Credentials                                      |
-|-----------|-------------------------|--------------------------------------------------|
-| Postgres  | `localhost:5432`        | db: `auto_scheduler` · user: `postgres` · pass: `postgrespassword` |
-| pgAdmin   | http://localhost:5050   | `admin@example.com` / `admin`                    |
-| n8n       | http://localhost:5678   | —                                                |
-| Gotenberg | http://localhost:3000   | — (PDF conversion for P1)                        |
-
-### 2. Start the Python scheduler API
-
-The API must be running for n8n to call it.
-
-**Linux / macOS**
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r algorithm/requirements.txt
-# If the API uses FastAPI/uvicorn (or similar), install those deps as well
-python -m algorithm.api
-```
-
-**Windows (PowerShell)**
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r algorithm\requirements.txt
-python -m algorithm.api
-```
-
-Endpoints:
-- `GET  /health`
-- `POST /schedule`
-
-From inside the n8n Docker container, call:
-```
-http://host.docker.internal:8000/schedule
-```
-
-Keep the API process running while you test n8n workflows.
+Auto-Scheduler automates the hard part: **constraint-aware placement** and **independent verification**, then surfaces anything that still cannot fit so a human can decide what to do.
 
 ---
 
-## Architecture (P0)
+## What you get
 
-```
-PostgreSQL (schema + seed)
-        ↓
-Python scheduling pipeline
-  ├─ database loader
-  ├─ conflict graph
-  ├─ DSATUR timeslot colouring (respects allowed timeslots)
-  ├─ room / capacity / equipment assignment
-  └─ independent verifier
-        ↓
-{ status, success, placed[], unplaced[], violations_count, verification_errors[] }
-        ↓
-n8n workflow
-  ├─ Contract Validation
-  ├─ IF unplaced.length > 0
-  │     TRUE  → Conflict Handler → Gemini AI → Conflict Success
-  │     FALSE → n8n-native HTML Timetable
-```
-
-### Scope ladder (locked)
-
-| Tier | Scope | If time is short |
-|------|--------|------------------|
-| **P0** | DB → DSATUR → verified output → n8n HTML / conflict path | **Never cut** |
-| **P1** | Streamlit UI, PDF+email (Gotenberg), plain Slack, standalone verifier | Narrate if not live |
-| **P2** | Interactive Slack approval buttons | Cut first |
+| Capability | What it means for you |
+|---|---|
+| **Constraint-aware scheduling** | Respects room capacity, lab/equipment needs, instructor limits, co-enrolment, and allowed timeslots |
+| **Independent verification** | Every placed schedule is checked again so residual clashes do not slip through |
+| **Clear conflict reporting** | Unplaced courses come with reason codes; Gemini can write a plain-language conflict report |
+| **Web UI** | Streamlit app: upload CSV → select courses → generate → filter and export |
+| **Email delivery** | Send the finished timetable to one or more addresses via Gmail (optional, user-triggered) |
+| **Reproducible orchestration** | n8n workflows handle routing, validation, HTML output, and email — exportable and re-importable |
 
 ---
 
-## Features
+## How it works
 
-- **Constraint-aware scheduling** – room capacity, equipment/lab requirements, instructor hours, co-enrolment cliques, and per-course allowed timeslots.
-- **Independent verifier** – placed schedules are checked for residual violations (`violations_count` and `verification_errors`).
-- **Contract-driven integration** – algorithm output shape is a locked interface used by n8n.
-- **Dual n8n paths** – success path renders an HTML timetable; conflict path produces an AI explanation of unplaced courses.
-- **Deliberate failure fixtures** – seed data guarantees conflict scenarios so the conflict branch can be demonstrated.
-
----
-
-## Data Contract (Algorithm → n8n)
-
-See `/contracts` for the authoritative interface. Minimal shape:
-
-```json
-{
-  "placed": [
-    {
-      "course_id": 1,
-      "section_id": 1,
-      "room_id": 1,
-      "timeslot": "Mon-09:00",
-      "instructor_id": 1
-    }
-  ],
-  "unplaced": [
-    {
-      "course_id": 23,
-      "reason_code": "ROOM_CAPACITY",
-      "detail": "Expected enrolment 150 exceeds largest available room capacity 80"
-    }
-  ],
-  "violations_count": 0
-}
+```text
+You (CSV + course selection)
+        │
+        ▼
+Streamlit UI
+        │
+        ▼
+n8n  ──  validates request, calls the scheduler, routes success vs conflict
+        │
+        ▼
+Python scheduling engine
+  • load courses / rooms / instructors from PostgreSQL
+  • build conflict graph
+  • DSATUR timeslot colouring
+  • room & resource assignment
+  • independent verifier
+        │
+        ├── Success  →  HTML timetable + export / email
+        └── Conflict →  unplaced list + AI explanation
 ```
 
-`reason_code` values:  
-`ROOM_CAPACITY` | `ROOM_EQUIPMENT` | `CO_ENROLMENT` | `INSTRUCTOR_CLASH` | `OTHER`
+**Design principles**
 
-Do not change field names, nesting, or enum values without team approval.
-
----
-
-## Deliberate Failure Fixtures (Do Not Remove)
-
-Seed data contains **28 course-sections**, including six fixture courses that form three structurally unplaceable scenarios:
-
-1. **CSC999** – enrolment 150 > largest room (80) → `ROOM_CAPACITY`
-2. **CSC351 + CSC352** – lab contention + same instructor hour limit → `ROOM_EQUIPMENT` / clash
-3. **MTH401 / MTH402 / MTH403** – co-enrolment clique with insufficient free slots → `CO_ENROLMENT`
-
-These are intentional test fixtures so the conflict path fires during demos. Removing or “fixing” them breaks validation design.
+- The database holds **reference data** (catalogue of courses, rooms, constraints). Your CSV is a **filter and enrolment override**, not a dump into the DB.
+- Placement and verification are separate steps. A zero violation count means everything that *was* placed is clean — not that every requested course was placed.
+- Email is never automatic. You choose when to send.
 
 ---
 
-## Repository Layout
+## Who it’s for
 
-```
-├── algorithm/                 # DSATUR scheduler, graph, room assigner, verifier, API
-├── contracts/                 # Locked JSON interface + example
-├── database/
-│   ├── schema.sql
-│   └── seed_data.sql          # 28 courses incl. deliberate failures
-├── docs/
-│   └── REPO_STATUS.md
-├── frontend/                  # Streamlit (P1)
-├── n8n/ / workflows/          # Validated n8n workflow export
-├── docker-compose.yml         # Postgres + pgAdmin + n8n + Gotenberg
-├── .env.example
-├── CONTRIBUTING.md
-└── README.md
-```
+- Academic planners and departmental admins who need a first-pass conflict-free grid quickly  
+- Teams that want a transparent, auditable scheduling pipeline (algorithm + contracts + workflows)  
+- Capstone / demo environments where both success and failure paths must be showable on demand  
 
 ---
 
-## Validation Status
+## Get started
 
-| Path                              | Status |
-|-----------------------------------|--------|
-| Python API health                 | PASS   |
-| Python scheduling API             | PASS   |
-| Contract validation               | PASS   |
-| Conflict IF branch                | PASS   |
-| Conflict Handler + Gemini         | PASS   |
-| Successful / no-conflict HTML path| PASS   |
+**Full install, run, Gmail setup, and troubleshooting:**
 
-Latest observed behaviour: scheduler can return unplaced courses while `violations_count = 0` and `verification_errors = []` (i.e. everything that *was* placed is conflict-free). Exact counts depend on a clean run from a fresh database.
+→ **[User Guide — START_SCHEDULER.md](user%20guide/START_SCHEDULER.md)**
 
-More detail: [`docs/REPO_STATUS.md`](docs/REPO_STATUS.md)
+That guide walks through Docker, the Python API, n8n workflow import, Streamlit, and optional email end-to-end.
 
 ---
 
-## Contributor Roles
+## Tech stack (at a glance)
 
-| Role | Owns |
-|------|------|
-| **A** | Database, seed data, Docker, Gotenberg, setup docs |
-| **B** | Scheduling algorithm (graph + DSATUR), verifier |
-| **C** | n8n orchestration, contract validation, HTML timetable |
-| **D** | AI conflict explanation + Slack messaging |
-| **E** | Streamlit CSV upload + calendar view |
+| Layer | Choice |
+|---|---|
+| Scheduling engine | Python (conflict graph + DSATUR + room assigner + verifier) |
+| Data | PostgreSQL (schema + seed with deliberate conflict fixtures) |
+| Orchestration | n8n (contract validation, dual paths, Gmail sender) |
+| UI | Streamlit |
+| AI (optional) | Google Gemini for conflict narratives |
+| Infrastructure | Docker Compose (Postgres, pgAdmin, n8n, Gotenberg) |
 
-### Collaboration rules (summary)
+Locked interfaces live in [`contracts/`](contracts/). Collaboration rules and roles: [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
-- Preserve data contracts and the P0 architecture unless the team explicitly approves a change.
-- Never remove the deliberate failure fixtures.
-- Work on feature/fix branches; never push directly to `main`.
-- Full rules and AI/LLM guardrails: [`CONTRIBUTING.md`](CONTRIBUTING.md)
+---
+
+## Project status
+
+| Area | Status |
+|---|---|
+| Core pipeline (DB → schedule → verify → n8n) | Validated |
+| Streamlit UI | Implemented |
+| Gmail timetable email | Implemented |
+| PDF (Gotenberg) / Slack | In stack / optional |
+
+Implementation notes: [`docs/REPO_STATUS.md`](docs/REPO_STATUS.md)
 
 ---
 
 ## License
 
-MIT License – see [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE).
 
 Copyright (c) 2026 Group 4, Cohort 8 of TC  
 (Granted by Perosic – Team Assistant Lead, on behalf of the group)
-
----
-
-## Next Steps
-
-1. Final team review and merge of the validated API + n8n work.
-2. One clean end-to-end run from a fresh Docker/database state; record exact output for the demo.
-3. Keep the P0 pipeline stable for presentation.
-4. Add P1 features (Streamlit, PDF/email, Slack) only if required by final scope.

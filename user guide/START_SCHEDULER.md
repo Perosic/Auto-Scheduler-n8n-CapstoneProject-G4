@@ -175,7 +175,7 @@ From `<repo>`:
 
 ```powershell
 python -m venv .venv
-.\venv\Scripts\Activate.ps1
+.\.venv\Scripts\Activate.ps1
 pip install -r algorithm/requirements.txt
 pip install -r frontend/requirements.txt
 pip install requests
@@ -186,7 +186,7 @@ This installs `psycopg2-binary` and `python-dotenv` (scheduler), `streamlit` and
 **You must activate the virtual environment in every new PowerShell window** before running the scheduler or Streamlit:
 
 ```powershell
-.\venv\Scripts\Activate.ps1
+.\.venv\Scripts\Activate.ps1
 ```
 
 > **macOS / Linux:** use `python3 -m venv .venv`, activate with `source .venv/bin/activate`, and write paths with `/` (for example `pip install -r algorithm/requirements.txt`). On Linux, Docker may also need `extra_hosts: ["host.docker.internal:host-gateway"]` on the `n8n` service so n8n can reach the Python API.
@@ -366,7 +366,7 @@ Open a **new PowerShell window**, go to `<repo>`, activate the virtual environme
 
 ```powershell
 cd path\to\Auto-Scheduler-n8n-CapstoneProject-G4
-.\venv\Scripts\Activate.ps1
+.\.venv\Scripts\Activate.ps1
 python -m algorithm.api
 ```
 
@@ -421,7 +421,7 @@ Open a **third PowerShell window**:
 
 ```powershell
 cd path\to\Auto-Scheduler-n8n-CapstoneProject-G4
-.\venv\Scripts\Activate.ps1
+.\.venv\Scripts\Activate.ps1
 streamlit run frontend/app.py
 ```
 
@@ -445,394 +445,140 @@ You should get the full schedule back (`placed` with three courses). If you get 
 
 Your CSV needs one row per course with these five pieces of information. Column names are flexible:
 
-| Required field | Accepted column names (case-insensitive; `_`, `-` and spaces are treated alike) |
+| Required | Example columns accepted |
 |---|---|
-| `course_id` | course_id, course id, id |
-| `course_code` | course_code, course code, code, course |
-| `course_name` | course_name, course name, title, course title, name |
-| `instructor` | instructor, lecturer, lecturer name, teacher, instructor name |
-| `students` | students, student count, number of students, enrollment, enrolment |
+| Course code | `course_code`, `Course Code`, `code`, `Course` |
+| Title | `title`, `Course Title`, `name` |
+| Enrolment | `enrollment`, `students`, `Enrolment`, `size` |
+| Duration (hours) | `duration`, `hours`, `Duration` |
+| Preferred / allowed times (optional) | `preferred_times`, `timeslots` |
 
-Example:
+A ready-made clean CSV is in the repo:
 
-```csv
-course_id,course_code,course_name,instructor,students
-1,CSC101,Intro to Programming,Dr. Ada Okonkwo,55
-2,CSC201,Data Structures,Dr. Ada Okonkwo,45
-3,MTH101,Calculus I,Dr. Fatima Bello,60
+```text
+frontend/test_scheduler_courses.csv
 ```
 
-Rules the page checks:
+Upload that file for a first successful run. To exercise the conflict path, include any of the deliberate failure codes (CSC999, CSC351, CSC352, MTH401, MTH402, MTH403).
 
-- All five fields must be present.
-- `students` must be a non-negative number.
-- Course codes must not repeat.
-- **Every `course_code` must exist in the database** (see the list in section 6).
+### 10.2 Generate a schedule
 
-The instructor and course name in the CSV are checked for presence but the **database values are used for scheduling**. The **student count** from the CSV (or your override on the page) is what gets scheduled.
+1. Open http://localhost:8501.
+2. Upload your CSV (or the test file).
+3. Select the courses you want to schedule.
+4. Optionally adjust enrolment numbers.
+5. Click **Generate Schedule**.
 
-Ready-made files in the repository:
+Streamlit posts to the n8n scheduling webhook. n8n calls the Python API, runs the scheduler, and returns either a timetable or a conflict report.
 
-- `frontend/test_scheduler_courses.csv`: eleven courses that all exist in the database and schedule successfully.
-- `frontend/test_courses.csv` and `frontend/test_courses_alt.csv`: **contain course codes that are not in the seeded database** (for example CSC102, STA201, GST101). They are useful for testing the validation error, but they will not schedule.
+### 10.3 Read the results
 
-### 10.2 Step through the page
+- **Success path:** a table of placed courses (day, time, room, lecturer) and a downloadable CSV.
+- **Conflict path:** a list of unplaced courses with reason codes, plus (if Gemini is configured) an AI-written Conflict Resolution Report.
 
-1. **Upload Course CSV:** choose your file. The page shows a preview.
-2. **Column Mapping:** confirms which CSV column matched which field.
-3. **Validate Courses:** checks the data and shows summary numbers.
-4. **Select Courses:** all courses are selected by default. Remove any you do not want to schedule.
-5. **Enrollment:** change student counts if you want to test a different size.
-6. **Generate Schedule:** click the button. The request goes through n8n to the Python scheduler. The AI report on a conflict run can take a little longer. The page waits up to 180 seconds.
-7. **Results:** the timetable, filters (day, room, lecturer), unplaced courses (if any), and the conflict report (if any).
-8. **Export:**
-   - Download the timetable as CSV.
-   - **Send Timetable by Email** (see next subsection).
+### 10.4 Send the timetable by email (optional)
 
-### 10.3 Send the timetable by email
+Under **9. Export**, when at least one course was placed:
 
-After at least one course has been placed, section **9. Export** shows a form:
+1. Enter one or more recipient addresses (comma-separated).
+2. Optionally change the subject (default: "Your Course Timetable").
+3. Click **Send Timetable**.
 
-- **Recipient email** — one address, or several separated by commas.
-- **Subject** — defaults to `Your Course Timetable`.
-- **Send Timetable** button.
+Streamlit posts to the Gmail n8n workflow (`/webhook/send-schedule`). The email is HTML, grouped by day, with Time / Course / Title / Lecturer / Room columns.
 
-What happens when you click **Send Timetable**:
-
-1. Streamlit validates the addresses.
-2. It builds a payload from the **full** placed list (not the filtered view you may be looking at):
-
-   ```json
-   {
-     "recipient": "student@example.com",
-     "subject": "Your Course Timetable",
-     "schedule": [
-       {
-         "course": "CSC101",
-         "title": "Intro to Programming",
-         "lecturer": "Dr. Ada Okonkwo",
-         "day": "Mon",
-         "time": "09:00:00 - 10:00:00",
-         "room": "LT2"
-       }
-     ]
-   }
-   ```
-
-3. It POSTs to `http://localhost:5678/webhook/send-schedule` (or the value of `N8N_SEND_SCHEDULE_URL`).
-4. The Gmail workflow formats the email (groups by day, expands `Mon` → `Monday`, strips seconds from times, adds a Lecturer column when lecturers are present) and sends it through Gmail.
-
-Messages you may see:
-
-| Situation | Message on the page |
-|---|---|
-| Success | ✅ Timetable sent to … |
-| Empty or badly typed address | Error listing the bad address; nothing sent |
-| Gmail workflow rejects the request (HTTP 400) | Error plus the workflow’s reasons |
-| Gmail fails (expired sign-in, no credential, etc.) → HTTP 502 | Gmail error text shown |
-| Workflow not imported / not published (404) | Instruction to import and publish `Gmail_Timetable_Sender.json` |
-| n8n not running | “Could not connect to n8n” |
-
-The email is HTML (table grouped by day: Time, Course, Title, Lecturer, Room) with a plain-text alternative. The sender name is **Group 4 Auto-Scheduler**.
-
-### 10.4 Happy-path test
-
-Upload `frontend/test_scheduler_courses.csv`, leave all courses selected, and click **Generate Schedule**. You should see a green success message and a timetable with every course placed. Then enter your email under Export and click **Send Timetable**. You should receive the email within a few seconds.
-
-### 10.5 Test the conflict path
-
-Create a CSV that includes the failure fixtures, for example:
-
-```csv
-course_id,course_code,course_name,instructor,students
-1,CSC101,Intro to Programming,Dr. Ada Okonkwo,55
-2,CSC201,Data Structures,Dr. Ada Okonkwo,45
-3,MTH101,Calculus I,Dr. Fatima Bello,60
-4,CSC999,Massive Open Seminar,Unassigned,150
-5,CSC351,Advanced Programming Lab A,Unassigned,22
-6,CSC352,Advanced Programming Lab B,Unassigned,22
-```
-
-Upload it and click **Generate Schedule**. You should see:
-
-- A warning that the schedule has conflicts or unplaced courses.
-- The normal courses still in the timetable.
-- **Unplaced Courses** listing CSC999 and the lab courses with reasons.
-- A **Conflict Resolution Report** written by the AI agent (needs the Gemini credential).
-
-You can still email the **placed** courses from the Export section even on a conflict run.
-
-In n8n, open the **Executions** tab to see which path each run took. Successful runs go through *Timetable HTML generator*; conflict runs go through *conflict handler → AI Agent → Conflict Success*. Gmail runs appear under the Gmail workflow’s executions.
+If the Gmail workflow is not imported or not published, Streamlit shows a clear error telling you how to fix it. A Gmail failure never blocks schedule generation.
 
 ---
 
 ## 11. Understanding the results
 
-The scheduler returns one of these statuses:
-
-| Status | Meaning | n8n path |
-|---|---|---|
-| `SUCCESS` | Every requested course was placed and verification passed | Timetable HTML generator |
-| `PARTIAL` | Some courses were placed, some could not be | Conflict handler → AI Agent |
-| `CONFLICT` | No courses could be placed, or verification failed | Conflict handler → AI Agent |
-
-The **If** node sends anything that is **not** `SUCCESS` down the conflict path, so partial results are never reported as complete.
-
-Common reasons a course is unplaced:
-
-| Reason | What it means |
+| Field | Meaning |
 |---|---|
-| `ROOM_CAPACITY` | The enrolment is larger than every available room |
-| Room occupied | Rooms that are big enough are already taken in the allowed timeslots |
-| No legal timeslot | Co-enrolment or instructor constraints leave no free slot |
-| `ROOM_EQUIPMENT` | A lab or equipment requirement cannot be met |
+| `placed` | Courses successfully assigned a timeslot and room |
+| `unplaced` | Courses that could not be placed, each with a `reason_code` |
+| `violations_count` | Residual hard-constraint violations on the *placed* set (should be 0) |
+| `verification_errors` | Human-readable list from the independent verifier |
 
-`violations_count` counts unplaced courses plus verification errors. A `verification_errors` list that is empty means the placed schedule passed the independent verifier. It does not mean every course was placed.
+`reason_code` values:
 
-After n8n processes the result, the response returned to Streamlit may also contain `html` (a ready-made timetable page), `message`, and `resolution_report` (the AI conflict explanation).
+- `ROOM_CAPACITY` — enrolment exceeds every available room
+- `ROOM_EQUIPMENT` — needs a lab/equipment type that is already fully booked
+- `CO_ENROLMENT` — clique of co-enrolled courses with too few free slots
+- `INSTRUCTOR_CLASH` — instructor hour or overlap limit
+- `OTHER` — catch-all
+
+A run can return unplaced courses while `violations_count = 0`. That means everything that *was* placed is conflict-free; the unplaced items are the ones the algorithm could not fit.
 
 ---
 
 ## 12. Daily quick-start
 
-Once everything is set up, this is all you need each time.
-
-**Window 1 — Docker**
+After the first-time setup is done:
 
 ```powershell
+# Terminal 1 — infrastructure (if not already running)
 cd path\to\Auto-Scheduler-n8n-CapstoneProject-G4
 docker compose up -d
-docker compose ps
-```
 
-(Start Docker Desktop first.)
-
-**Window 2 — Python scheduler**
-
-```powershell
-cd path\to\Auto-Scheduler-n8n-CapstoneProject-G4
-.\venv\Scripts\Activate.ps1
+# Terminal 2 — Python API
+.\.venv\Scripts\Activate.ps1
 python -m algorithm.api
-```
 
-**Window 3 — Streamlit**
-
-```powershell
-cd path\to\Auto-Scheduler-n8n-CapstoneProject-G4
-.\venv\Scripts\Activate.ps1
+# Terminal 3 — Streamlit
+.\.venv\Scripts\Activate.ps1
 streamlit run frontend/app.py
 ```
 
-Then open http://localhost:8501. Check that **both** workflows are still **Active / Published** at http://localhost:5678 (scheduling workflow and Gmail Timetable Sender).
-
-If email suddenly stops working after about a week, re-sign in to the Gmail credential in n8n (Google Testing-mode expiry).
+Confirm both n8n workflows are **Active / Published**, then open http://localhost:8501.
 
 ---
 
 ## 13. Stopping and resetting
 
-**Stop the Python processes:** close the PowerShell windows running the API and Streamlit, or press `Ctrl+C` in each.
-
-**Stop Docker services (keeps data and n8n workflows):**
-
 ```powershell
+# Stop Streamlit and the Python API: Ctrl+C in their terminals
+
+# Stop Docker services (keeps data)
 docker compose down
-```
 
-Start again later with `docker compose up -d`. Your database and n8n workflows are kept.
-
-**Full reset (deletes the database AND your n8n workflows, accounts and credentials):**
-
-```powershell
+# Stop Docker and delete the Postgres volume (full reset of seed data)
 docker compose down -v
 ```
 
-Use this only if you want a clean start. After it, you must repeat section 7 (n8n account, both workflow imports, credentials, activation/publish). The database reloads automatically from `schema.sql` and `seed_data.sql`.
+After a volume reset, the next `docker compose up -d` reloads schema and seed data automatically.
 
 ---
 
 ## 14. Troubleshooting
 
-### Streamlit or webhook: HTTP 404 from n8n (scheduling)
-
-The scheduling workflow is not active, or another workflow holds the same path. In n8n, open the Workflows list, deactivate any old versions, and activate the v2 workflow. Make sure the Webhook node's path matches `N8N_WEBHOOK_URL` in `frontend/app.py`.
-
-### The webhook returns `{"message": "Workflow was started"}` and no timetable
-
-The active workflow responds immediately instead of waiting. Open the **Webhook** node and set **Respond** to **When Last Node Finishes**, save, then switch the workflow off and on again. Also check for an old duplicate workflow that is still active.
-
-### Conflict path never runs / PARTIAL treated as success
-
-You are running an old copy of the workflow whose **If** node checks for `status equals CONFLICT`. The v2 workflow checks `status not equals SUCCESS`. Re-import `n8n/n8n_streamlit_integration_v2.json`.
-
-### “Connection refused” from n8n to the Python API
-
-The Python scheduler is not running, or n8n cannot reach `host.docker.internal:8000`. Start the API with `python -m algorithm.api` and keep the window open. On Linux you may need the `extra_hosts` entry mentioned in section 5.
-
-### AI Agent / Gemini error on conflict runs
-
-The Gemini credential is missing or invalid. In n8n, open the **Executions** tab, open the failed run, and look at the **AI Agent** node. Add or fix the credential on the **Google Gemini Chat Model** node.
-
-### Email: “The Gmail workflow was not found” (404)
-
-Import `n8n/Gmail_Timetable_Sender.json`, connect a Gmail credential on the **Gmail: Send Timetable** node, and **Publish** the workflow. The production path must be `send-schedule`.
-
-### Email: “Could not connect to n8n”
-
-ning. Start Docker (`docker compose up -d`) and confirm http://localhost:5678 loads.
-
-### Email: HTTP 502 / Gmail error text
-
-Usually an expired or missing Gmail OAuth credential. Open the Gmail credential in n8n and click **Sign in with Google** again (required roughly every 7 days while the Google app is in Testing mode). Also check that the Gmail API is enabled in Google Cloud Console and that the sending address is listed as a test user.
-
-### Email: validation errors (HTTP 400)
-
-The payload is missing required fields or has an invalid recipient. The page shows the reasons returned by the workflow. Common causes: empty recipient, malformed address, or an empty `schedule` list.
-
-### Course codes not found / missing courses
-
-Every `course_code` in the CSV must exist in the seeded database (section 6). Use `frontend/test_scheduler_courses.csv` for a known-good set.
-
-### The database seems to have old or missing data
-
-Seed data only loads the first time. Do the full reset in section 13, then redo the n8n setup.
-
-### A CSV is rejected by the page
-
-Check the **Column Mapping** table on the page. A field showing "Not found" needs a column renamed to one of the accepted names in section 10.1. The page also rejects negative student counts and duplicate course codes.
-
-### Python module / package errors
-
-Always run the API with `python -m algorithm.api` from the repo root with the virtual environment activated. Install both requirement files and `requests` (section 5).
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| `connection refused` from n8n to the API | Python API not running | Start `python -m algorithm.api` and leave the window open |
+| `ModuleNotFoundError: algorithm` | Ran `python algorithm\api.py` instead of the module form | Use `python -m algorithm.api` from the repo root with the venv active |
+| n8n returns `"Workflow was started"` only | Old / inactive workflow, or Respond mode is "Immediately" | Use the v2 workflow, set Respond to **When Last Node Finishes**, Publish/Activate |
+| Python scheduler node shows "?" in n8n | n8n version too old for HTTP Request 4.5 | Upgrade n8n, or replace the node with a fresh HTTP Request (POST, `http://host.docker.internal:8000/schedule`, JSON body `{{ $json.body }}`) |
+| Course code not found | Code not in the seed database | Use only the codes listed in section 6 |
+| Gmail send fails / 502 | Credential expired or missing | Re-open the Gmail credential in n8n → Sign in with Google again (Testing apps expire ~7 days) |
+| Gmail 404 from Streamlit | Workflow not imported or not published | Import `n8n/Gmail_Timetable_Sender.json` and Publish it |
+| Port already in use | Another process on 5432 / 5678 / 8000 / 8501 | Stop the other process or change the port in `.env` / Streamlit |
+| `host.docker.internal` fails on Linux | Docker networking | Add `extra_hosts: ["host.docker.internal:host-gateway"]` under the n8n service in `docker-compose.yml` |
 
 ---
 
 ## 15. Reference
 
-### Scheduler API
-
-| Endpoint | Purpose |
-|---|---|
-| `GET /health` | Confirms the API process is running |
-| `POST /schedule` | Schedules the given courses |
-
-**Request body for `POST /schedule`:**
-
-```json
-{
-  "course_codes": ["CSC101", "CSC201", "MTH101"],
-  "enrollment_overrides": { "CSC101": 50 }
-}
-```
-
-- `course_codes` must be a JSON array.
-- `enrollment_overrides` must be a JSON object (use `{}` for none).
-
-**Main fields in the response:**
-
-| Field | Meaning |
-|---|---|
-| `status` | `SUCCESS`, `PARTIAL` or `CONFLICT` |
-| `success` | `true` only if every requested course was placed |
-| `requested_courses` | The course codes that were scheduled |
-| `placed` | Placed courses with day, time, room and lecturer |
-| `unplaced` | Courses that could not be placed, with reasons |
-| `violations_count` | Unplaced courses plus verification errors |
-| `verification_errors` | Problems found by the independent verifier |
-| `missing_courses` | Requested codes not found in the database |
-
-After n8n processes it, the response may also contain `html` (a ready-made timetable page), `message`, and `resolution_report` (the AI conflict explanation).
-
-### Gmail webhook (email delivery)
-
 | Item | Value |
 |---|---|
-| Method | `POST` |
-| Production URL | `http://localhost:5678/webhook/send-schedule` |
-| Content-Type | `application/json` |
-| Workflow file | `n8n/Gmail_Timetable_Sender.json` |
+| Scheduling webhook (Streamlit → n8n) | `http://localhost:5678/webhook/08190fdc-b0cf-4c0f-a7c0-b6c60e7595e2` |
+| Gmail webhook (Streamlit → n8n) | `http://localhost:5678/webhook/send-schedule` |
+| Python API | `http://localhost:8000` (`GET /health`, `POST /schedule`) |
+| From n8n container to API | `http://host.docker.internal:8000/schedule` |
+| Scheduling workflow file | `n8n/n8n_streamlit_integration_v2.json` |
+| Gmail workflow file | `n8n/Gmail_Timetable_Sender.json` |
+| Full Gmail docs | `docs/integrations/GMAIL_N8N_INTEGRATION.md` |
+| Streamlit ↔ Gmail docs | `docs/integrations/STREAMLIT_GMAIL_CONNECTION.md` |
+| Test CSV (clean) | `frontend/test_scheduler_courses.csv` |
 
-**Request body:**
+---
 
-```json
-{
-  "recipient": "student@example.com",
-  "subject": "Your Course Timetable",
-  "schedule": [
-    {
-      "course": "CSC101",
-      "title": "Computer Science",
-      "lecturer": "Dr. Ada Okonkwo",
-      "day": "Monday",
-      "time": "09:00 - 11:00",
-      "room": "CR101"
-    }
-  ]
-}
-```
-
-| Field | Required | Notes |
-|---|---|---|
-| `recipient` | Yes | One address or several separated by commas |
-| `subject` | No | Defaults to `Your Course Timetable` |
-| `schedule` | Yes | At least one entry |
-| `schedule[].course` | Yes | Course code |
-| `schedule[].title` | No | Course title |
-| `schedule[].lecturer` | No | Shown as a Lecturer column when present; `instructor` is also accepted |
-| `schedule[].day` | Yes | Day name or short form (`Mon`, etc.) |
-| `schedule[].time` | Yes | Time range |
-| `schedule[].room` | Yes | Room code |
-
-**Responses:**
-
-- **200** — `"success": true`, email sent
-- **400** — `"success": false`, validation errors listed
-- **502** — `"success": false`, Gmail could not send (credential, network, etc.)
-
-Full schemas: `n8n/schemas/send_schedule.request.schema.json` and `n8n/schemas/send_schedule.response.schema.json`.  
-Sample payloads: `n8n/samples/send_schedule_valid.json`, `send_schedule_invalid.json`, `send_schedule_seed_data.json`.
-
-### Default credentials (local development only)
-
-| Service | Login |
-|---|---|
-| PostgreSQL | user `postgres`, password `postgrespassword`, database `auto_scheduler` |
-| pgAdmin | `admin@example.com` / `admin` |
-| n8n | the owner account you create on first visit |
-| Gmail | the Google account you connect inside the n8n Gmail credential |
-
-These are development defaults for a local machine. Change them before exposing anything to a network.
-
-### Dependency summary
-
-| File | Packages |
-|---|---|
-| `algorithm/requirements.txt` | psycopg2-binary, python-dotenv |
-| `frontend/requirements.txt` | streamlit, pandas |
-| (extra) | requests (used by `frontend/app.py` and `frontend/email_timetable.py`) |
-
-### Startup order at a glance
-
-```text
-Docker Desktop
-      ↓
-docker compose up -d        (PostgreSQL + n8n + …)
-      ↓
-n8n: import & activate scheduling workflow (v2)
-n8n: import Gmail Timetable Sender, add Gmail credential, Publish
-      ↓
-python -m algorithm.api     (Python scheduler on port 8000)
-      ↓
-streamlit run frontend/app.py   (frontend on port 8501)
-      ↓
-Upload CSV → Generate Schedule → (optional) Send Timetable by Email
-```
-
-### Related documentation in the repo
-
-| Document | Content |
-|---|---|
-| `docs/integrations/GMAIL_N8N_INTEGRATION.md` | Full Gmail workflow design, setup, testing |
-| `docs/integrations/STREAMLIT_GMAIL_CONNECTION.md` | How Streamlit calls the Gmail webhook |
-| `docs/handoff/GMAIL_INTEGRATION_WORK_SUMMARY.md` | Work summary and decisions |
-| `docs/handoff/N8N_WORKFLOW_GUIDE.md` | Scheduling workflow notes |
+*Guide maintained for Group 4 Capstone · Auto-Scheduler n8n · last aligned with Gmail + Streamlit integration (Oct 2026).*
