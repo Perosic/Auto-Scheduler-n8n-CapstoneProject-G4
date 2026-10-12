@@ -1,6 +1,6 @@
 # Repository Sync & Integration Status
 
-_Last checked: 2026-10-09_
+_Last checked: 2026-10-13_
 
 ## Current state
 
@@ -21,7 +21,7 @@ PostgreSQL → Python scheduling/verification → HTTP API → n8n orchestration
 - n8n Contract Validation.
 - Conflict routing and Gemini conflict explanation.
 - Successful/no-conflict HTML timetable branch.
-- Reproducible n8n workflow exports under `n8n/` and `workflows/`.
+- Reproducible n8n workflow exports under `n8n/` (active workflows) and `n8n/archive/` (historical).
 
 **P1**
 - Streamlit frontend (`frontend/app.py`) with CSV upload, course selection, timetable view, and export.
@@ -29,7 +29,7 @@ PostgreSQL → Python scheduling/verification → HTTP API → n8n orchestration
 - Standalone Gmail Timetable Sender workflow: `n8n/Gmail_Timetable_Sender.json`.
 - Streamlit → Gmail connection (`frontend/email_timetable.py`).
 - Integration docs under `docs/integrations/`.
-- Full user guide: `user guide/START_SCHEDULER.md`.
+- Full user guide: `user-guide/START_SCHEDULER.md`.
 
 ## Validation record
 

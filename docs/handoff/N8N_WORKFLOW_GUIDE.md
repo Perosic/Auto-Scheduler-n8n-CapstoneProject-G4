@@ -6,7 +6,7 @@ This folder contains the exported n8n orchestration workflow used by the Auto-Sc
 
 Workflow file:
 
-`n8n/Auto_scheduler_n8n_Orchestrator.json`
+`n8n/archive/Auto_scheduler_n8n_Orchestrator.json`
 
 The workflow keeps the Python scheduler authoritative and uses n8n for orchestration, contract validation, conflict routing, AI-assisted conflict analysis, and HTML timetable generation.
 
@@ -233,7 +233,7 @@ HTML values are escaped before insertion into the page.
 1. Start n8n.
 2. Open the n8n editor.
 3. Import the workflow JSON from:
-   `n8n/Auto_scheduler_n8n_Orchestrator.json`
+   `n8n/archive/Auto_scheduler_n8n_Orchestrator.json`
 4. Configure the Google Gemini credential.
 5. Start the Python scheduler API.
 6. Make sure n8n can reach the API at:
