@@ -4,9 +4,13 @@ These files are **historical reference only**. Do **not** import them for a new 
 
 | File | Notes |
 |---|---|
-| `n8n_streamlit_integration_v2.json` is the current scheduling workflow (lives one level up) | — |
-| `Gmail_Timetable_Sender.json` is the current email workflow (lives one level up) | — |
-| `Auto_scheduler_n8n_Orchestrator.json` | Earlier orchestrator export (manual trigger, pre–Streamlit webhook) |
-| `course_scheduler_workflow.json` | Older master workflow export from the top-level `workflows/` folder |
+| `course_scheduler_workflow.json` | Older master workflow (formerly top-level `workflows/`) |
 
-Active imports: see the parent [`n8n/README.md`](../README.md) and `user-guide/START_SCHEDULER.md`.
+Earlier orchestrator export remains at the parent folder as [`../Auto_scheduler_n8n_Orchestrator.json`](../Auto_scheduler_n8n_Orchestrator.json) (manual-trigger reference).
+
+**Active imports** (use these):
+
+- [`../n8n_streamlit_integration_v2.json`](../n8n_streamlit_integration_v2.json)
+- [`../Gmail_Timetable_Sender.json`](../Gmail_Timetable_Sender.json)
+
+See the parent [`n8n/README.md`](../README.md) and `user-guide/START_SCHEDULER.md`.
