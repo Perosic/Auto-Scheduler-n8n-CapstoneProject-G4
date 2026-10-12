@@ -55,7 +55,8 @@ services:
       - DB_POSTGRESDB_PASSWORD=${POSTGRES_PASSWORD:-postgrespassword}
     volumes:
       - n8n_data:/home/node/.n8n
-      - ./workflows:/home/node/.n8n/workflows
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       postgres:
         condition: service_healthy
